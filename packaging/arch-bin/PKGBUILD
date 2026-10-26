@@ -1,17 +1,22 @@
 # Prebuilt release package: cd packaging/arch-bin && makepkg -si
 pkgname=hp-charge-limit-rs-bin
 pkgver=0.1.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Battery charge limiter via ACPI WMI (prebuilt binary)"
 arch=('x86_64' 'aarch64')
 url="https://github.com/kralonur/hp-charge-limit-rs"
-license=('unknown')
+license=('MIT OR Apache-2.0')
 depends=('acpi_call')
 provides=("hp-charge-limit-rs=$pkgver")
 conflicts=('hp-charge-limit-rs')
 backup=('etc/hp-charge-limit-rs.conf')
 options=('!debug' '!strip')
 
+# v0.1.0 predates the license files in release archives.
+source=("https://raw.githubusercontent.com/kralonur/hp-charge-limit-rs/f951f28dee57fb08193899039b0987f9dc9e7d9f/LICENSE-MIT"
+        "https://raw.githubusercontent.com/kralonur/hp-charge-limit-rs/f951f28dee57fb08193899039b0987f9dc9e7d9f/LICENSE-APACHE")
+sha256sums=('fffb44aca16588eebae3e3e9a820c02ea28bd4d56d283b9f4df7fd9916819828'
+            'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30')
 source_x86_64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
 sha256sums_x86_64=('833d90967f2a4d08b43c4f47afdeead3f757ffd9a2d08843f3d283eac7027e46')
 source_aarch64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
@@ -23,4 +28,6 @@ package() {
   install -Dm644 packaging/hp-charge-limit-rs.service "$pkgdir/usr/lib/systemd/system/hp-charge-limit-rs.service"
   install -Dm644 packaging/hp-charge-limit-rs.conf "$pkgdir/etc/hp-charge-limit-rs.conf"
   install -Dm644 README.md "$pkgdir/usr/share/doc/hp-charge-limit-rs/README.md"
+  install -Dm644 "$srcdir/LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 "$srcdir/LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
 }
