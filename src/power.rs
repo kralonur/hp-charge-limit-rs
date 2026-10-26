@@ -79,6 +79,41 @@ pub fn status() -> Option<String> {
     paths::attr(BATTERY, "status")
 }
 
+fn number(name: &str) -> Option<f64> {
+    paths::attr(BATTERY, name)?.parse::<i64>().ok().map(|n| n as f64)
+}
+
+/// Full capacity relative to design capacity; charge-based batteries are supported too.
+pub fn health() -> Option<f64> {
+    for (full, design) in [("energy_full", "energy_full_design"), ("charge_full", "charge_full_design")] {
+        if let (Some(full), Some(design)) = (number(full), number(design))
+            && full >= 0.0 && design > 0.0
+        {
+            return Some(full / design * 100.0);
+        }
+    }
+    None
+}
+
+pub fn cycles() -> Option<u64> {
+    paths::attr(BATTERY, "cycle_count")?.parse().ok()
+}
+
+/// Prefer power_now; otherwise derive watts from current_now and voltage_now.
+pub fn power_watts() -> Option<f64> {
+    number("power_now").map(|p| p / MICRO_PER_UNIT).or_else(|| {
+        Some(number("current_now")? / MICRO_PER_UNIT * number("voltage_now")? / MICRO_PER_UNIT)
+    })
+}
+
+pub fn manufacturer() -> Option<String> {
+    paths::attr(BATTERY, "manufacturer")
+}
+
+pub fn model() -> Option<String> {
+    paths::attr(BATTERY, "model_name")
+}
+
 pub fn on_ac() -> bool {
     paths::attr(ADAPTER, "online").as_deref() == Some(ADAPTER_ONLINE)
 }

@@ -8,6 +8,7 @@ pub const ADAPTER: &str = "/sys/class/power_supply/ACAD";
 pub const ACPI_CALL: &str = "/proc/acpi/call";
 pub const OFF_STATE: &str = "/var/lib/hp-charge-limit-rs/off-state";
 pub const LOCK: &str = "/run/hp-charge-limit-rs.lock";
+pub const BYPASS: &str = "/run/hp-charge-limit-rs.bypass";
 
 /// Prefixed to every path when set, to run against fake sysfs/procfs files.
 const TEST_ROOT_VAR: &str = "HP_CHARGE_LIMIT_RS_TEST_ROOT";

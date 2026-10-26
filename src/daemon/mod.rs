@@ -6,7 +6,7 @@ pub use limiter::StopAction;
 
 use crate::cli::DaemonOpts;
 use crate::firmware::Wmi;
-use crate::{offstate, power, systemd};
+use crate::{bypass, offstate, power, systemd};
 use anyhow::{Result, ensure};
 use limiter::{Band, Exit, ExitPolicy, Limiter};
 use signal_hook::consts::{SIGINT, SIGTERM};
@@ -49,16 +49,20 @@ pub fn run(o: &DaemonOpts) -> Result<()> {
     let band = Band { stop: o.stop, start: o.start, run_mode: o.run_mode };
     let interval = Duration::from_secs(o.interval);
     let mut wmi = Wmi;
-    let mut limiter = Limiter::start(band, capacity(), &mut wmi);
+    let mut limiter = Limiter::start(band, capacity(), bypass::enabled(), &mut wmi);
     // wait one interval for a signal; a timeout is the next tick
     while let Err(RecvTimeoutError::Timeout) = terminate.recv_timeout(interval) {
         if let Some(reading) = power::reading() {
-            limiter.tick(reading, &mut wmi);
+            limiter.tick(reading, bypass::enabled(), &mut wmi);
         }
     }
 
     let exit = if systemd::system_stopping() { Exit::Shutdown } else { Exit::ServiceStop };
-    let policy = ExitPolicy { off_mode: o.off_mode, off_min: o.off_min, stop_mode: o.stop_mode };
+    let policy = if bypass::enabled() {
+        ExitPolicy { off_mode: StopAction::Auto, off_min: o.off_min, stop_mode: StopAction::Auto }
+    } else {
+        ExitPolicy { off_mode: o.off_mode, off_min: o.off_min, stop_mode: o.stop_mode }
+    };
     let capacity = capacity();
     let left = limiter.finish(exit, &policy, capacity, &mut wmi);
     if exit == Exit::Shutdown {

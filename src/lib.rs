@@ -9,6 +9,7 @@
 //! Only these three are ever written: never discharge or battery ship mode.
 
 pub mod cli;
+mod bypass;
 mod daemon;
 mod firmware;
 mod offstate;
@@ -30,6 +31,7 @@ pub fn run(cli: Cli) -> Result<()> {
             println!("set {mode} -> firmware reports {}", wmi.read()?);
             Ok(())
         }
+        Cmd::Bypass { action } => bypass::set(action),
         Cmd::Daemon(opts) => daemon::run(&opts),
     }
 }

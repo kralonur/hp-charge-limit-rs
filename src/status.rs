@@ -2,7 +2,7 @@
 
 use crate::firmware::Wmi;
 use crate::power::{self, Energy};
-use crate::{offstate, systemd};
+use crate::{bypass, offstate, systemd};
 use anyhow::{Context, Result};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -21,6 +21,18 @@ pub fn show(watch_secs: Option<u64>) -> Result<()> {
         power::energy().map_or_else(unknown, |e| e.to_string()),
         power::voltage().map_or_else(unknown, |v| v.to_string()),
     );
+    println!(
+        "pack:     {}  {}",
+        power::manufacturer().unwrap_or_else(unknown),
+        power::model().unwrap_or_else(unknown),
+    );
+    println!(
+        "health:   {}  cycles: {}  power: {}",
+        power::health().map_or_else(unknown, |h| format!("{h:.1}%")),
+        power::cycles().map_or_else(unknown, |c| c.to_string()),
+        power::power_watts().map_or_else(unknown, |p| format!("{p:.2} W")),
+    );
+    println!("bypass:   {}", if bypass::enabled() { "enabled (requested)" } else { "disabled" });
     match Wmi.read() {
         Ok(mode) => {
             println!("firmware: {mode}");

@@ -3,7 +3,7 @@
 
 use crate::daemon::StopAction;
 use crate::firmware::Mode;
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 const MAX_PERCENT: i64 = 100;
 const DEFAULT_STOP: u8 = 50;
@@ -29,8 +29,16 @@ pub enum Cmd {
     },
     /// Set a firmware charge mode once
     Set { mode: Mode },
+    /// Pause or resume charge limiting until reboot (applied on the next daemon poll)
+    Bypass { action: BypassAction },
     /// Run the limiter loop (what the systemd service runs)
     Daemon(DaemonOpts),
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum BypassAction {
+    On,
+    Off,
 }
 
 #[derive(Args)]

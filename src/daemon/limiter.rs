@@ -25,6 +25,7 @@ pub struct Band {
 pub enum State {
     Charging,
     Limiting,
+    Bypassed,
 }
 
 pub struct Limiter {
@@ -56,9 +57,12 @@ fn reassert(fw: &mut impl ChargeControl, mode: Mode) {
 
 impl Limiter {
     /// Always sets a mode, replacing whatever was left (e.g. hold from the
-    /// last shutdown); above `start` it keeps limiting.
-    pub fn start(band: Band, capacity: u8, fw: &mut impl ChargeControl) -> Self {
-        let state = if capacity <= band.start {
+    /// last shutdown); above `start` it keeps limiting unless bypassed.
+    pub fn start(band: Band, capacity: u8, bypass: bool, fw: &mut impl ChargeControl) -> Self {
+        let state = if bypass {
+            set_logged(fw, Mode::Auto, "bypass", capacity);
+            State::Bypassed
+        } else if capacity <= band.start {
             set_logged(fw, Mode::Auto, "start", capacity);
             State::Charging
         } else if set_logged(fw, band.run_mode, "start", capacity) {
@@ -69,13 +73,32 @@ impl Limiter {
         Limiter { band, state }
     }
 
-    pub fn tick(&mut self, reading: Reading, fw: &mut impl ChargeControl) {
+    pub fn tick(&mut self, reading: Reading, bypass: bool, fw: &mut impl ChargeControl) {
         // on battery nothing charges: leave the mode alone
         if !reading.on_ac {
             return;
         }
-        let Band { stop, start, run_mode } = self.band;
         let capacity = reading.capacity;
+        if bypass {
+            if self.state == State::Bypassed {
+                reassert(fw, Mode::Auto);
+            } else if set_logged(fw, Mode::Auto, "bypass", capacity) {
+                self.state = State::Bypassed;
+            }
+            return;
+        }
+        if self.state == State::Bypassed {
+            let (mode, state) = if capacity <= self.band.start {
+                (Mode::Auto, State::Charging)
+            } else {
+                (self.band.run_mode, State::Limiting)
+            };
+            if set_logged(fw, mode, "resume", capacity) {
+                self.state = state;
+            }
+            return;
+        }
+        let Band { stop, start, run_mode } = self.band;
         match self.state {
             State::Charging if capacity >= stop => {
                 if set_logged(fw, run_mode, "limit", capacity) {
@@ -89,7 +112,7 @@ impl Limiter {
                 }
             }
             State::Limiting if capacity >= stop => reassert(fw, run_mode),
-            State::Charging | State::Limiting => {}
+            State::Charging | State::Limiting | State::Bypassed => {}
         }
     }
 
