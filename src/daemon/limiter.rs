@@ -23,6 +23,7 @@ pub struct Band {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
+    Starting,
     Charging,
     Limiting,
     Bypassed,
@@ -59,18 +60,29 @@ impl Limiter {
     /// Always sets a mode, replacing whatever was left (e.g. hold from the
     /// last shutdown); above `start` it keeps limiting unless bypassed.
     pub fn start(band: Band, capacity: u8, bypass: bool, fw: &mut impl ChargeControl) -> Self {
-        let state = if bypass {
-            set_logged(fw, Mode::Auto, "bypass", capacity);
-            State::Bypassed
-        } else if capacity <= band.start {
-            set_logged(fw, Mode::Auto, "start", capacity);
-            State::Charging
-        } else if set_logged(fw, band.run_mode, "start", capacity) {
-            State::Limiting
+        let mut limiter = Limiter { band, state: State::Starting };
+        limiter.enter(capacity, bypass, fw);
+        limiter
+    }
+
+    /// Sets the mode `capacity` and `bypass` call for, ignoring hysteresis:
+    /// used at start (retried while it fails) and when bypass begins or ends.
+    fn enter(&mut self, capacity: u8, bypass: bool, fw: &mut impl ChargeControl) {
+        let (mode, state) = if bypass {
+            (Mode::Auto, State::Bypassed)
+        } else if capacity <= self.band.start {
+            (Mode::Auto, State::Charging)
         } else {
-            State::Charging
+            (self.band.run_mode, State::Limiting)
         };
-        Limiter { band, state }
+        let label = match self.state {
+            _ if bypass => "bypass",
+            State::Bypassed => "resume",
+            _ => "start",
+        };
+        if set_logged(fw, mode, label, capacity) {
+            self.state = state;
+        }
     }
 
     pub fn tick(&mut self, reading: Reading, bypass: bool, fw: &mut impl ChargeControl) {
@@ -79,23 +91,13 @@ impl Limiter {
             return;
         }
         let capacity = reading.capacity;
-        if bypass {
-            if self.state == State::Bypassed {
-                reassert(fw, Mode::Auto);
-            } else if set_logged(fw, Mode::Auto, "bypass", capacity) {
-                self.state = State::Bypassed;
-            }
+        let bypassed = self.state == State::Bypassed;
+        if bypass && bypassed {
+            reassert(fw, Mode::Auto);
             return;
         }
-        if self.state == State::Bypassed {
-            let (mode, state) = if capacity <= self.band.start {
-                (Mode::Auto, State::Charging)
-            } else {
-                (self.band.run_mode, State::Limiting)
-            };
-            if set_logged(fw, mode, "resume", capacity) {
-                self.state = state;
-            }
+        if bypass || bypassed || self.state == State::Starting {
+            self.enter(capacity, bypass, fw);
             return;
         }
         let Band { stop, start, run_mode } = self.band;
@@ -112,7 +114,7 @@ impl Limiter {
                 }
             }
             State::Limiting if capacity >= stop => reassert(fw, run_mode),
-            State::Charging | State::Limiting | State::Bypassed => {}
+            State::Starting | State::Charging | State::Limiting | State::Bypassed => {}
         }
     }
 
