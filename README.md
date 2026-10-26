@@ -150,25 +150,21 @@ Your config, documentation, licenses, and off-state history remain in
 `/usr/share/licenses/hp-charge-limit-rs/`, and `/var/lib/hp-charge-limit-rs/`;
 remove them separately if no longer needed.
 
-### Arch Linux (package installation)
+### Arch Linux (AUR)
 
 Choose one of these instead of the manual installation. Both packages
 depend on `acpi_call`; choose a module package appropriate for your kernel.
 
-**Prebuilt binary (no Rust or compilation required):**
+- [`hp-charge-limit-rs-bin`](https://aur.archlinux.org/packages/hp-charge-limit-rs-bin):
+  prebuilt static binary from the GitHub Release, for x86_64 and ARM64. No Rust
+  or compilation required.
+- [`hp-charge-limit-rs`](https://aur.archlinux.org/packages/hp-charge-limit-rs):
+  built from source with `cargo`, for x86_64.
+
+Install either one with an AUR helper, for example:
 
 ```sh
-cd packaging/arch-bin && makepkg -si
-```
-
-This installs `hp-charge-limit-rs-bin` from the GitHub Release, with SHA256
-verification. Supports x86_64 and ARM64. If the PKGBUILD still contains checksum
-placeholders, build from source until the verified release hashes are added.
-
-**Build from source:**
-
-```sh
-cd packaging/arch && makepkg -si
+paru -S hp-charge-limit-rs-bin
 ```
 
 The two packages provide the same binary and conflict with each other;
@@ -183,8 +179,8 @@ Arch's `acpi_call` package already installs
 `/usr/lib/modules-load.d/acpi_call.conf` to load the module at boot.
 `modprobe` above loads it for the current session if needed; do not add a
 duplicate config. If you use a different module package, check its setup.
-The package installs the binary, unit, configuration, documentation, D-Bus
-policy, and notifier autostart entry;
+The package installs the binary, unit, configuration, licenses, shell
+completions, D-Bus policy, and notifier autostart entry;
 `/etc/hp-charge-limit-rs.conf` is preserved on upgrades. Edit it and restart the
 service to change settings.
 
@@ -314,7 +310,7 @@ the current user in the policy instead of root), and the aarch64 build.
 
 ### Shell completion
 
-Both Arch packages install completion files for Bash, Zsh, Fish, Elvish, and
+Both AUR packages install completion files for Bash, Zsh, Fish, Elvish, and
 PowerShell. Bash needs the `bash-completion` package installed and enabled for
 automatic loading. Zsh needs completion enabled (`autoload -Uz compinit &&
 compinit` if your shell setup does not already do it). Restart your shell after
@@ -396,8 +392,8 @@ x86_64 and ARM64 binaries. Archives include the binary, README, licenses,
 systemd unit, default config, D-Bus policy, and notifier autostart entry, with
 a separate SHA256 checksum.
 
-Set the version in `Cargo.toml` and both PKGBUILDs, update `Cargo.lock`,
-commit, then push a matching version tag to GitHub:
+Set the version in `Cargo.toml`, update `Cargo.lock`, commit, then push a
+matching version tag to GitHub:
 
 ```sh
 version=$(cargo pkgid | cut -d'#' -f2)
@@ -406,8 +402,7 @@ git push origin main
 git push origin "v$version"
 ```
 
-After publishing, replace the checksum placeholders in
-`packaging/arch-bin/PKGBUILD` with each release archive's verified SHA256 hash.
+The AUR packages pick up new releases automatically.
 
 The tag must match the package version. GitHub Actions publishes the
 release and assets using its built-in token; no personal token is needed.
@@ -444,8 +439,7 @@ consumes the limiter, so nothing ticks after it.
 ## Verification and limitations
 
 There is currently no automated test suite. `cargo check --locked` checks
-compilation; it does not verify firmware behavior. The Arch package's
-`check()` invokes `cargo test`, but no project tests are defined.
+compilation; it does not verify firmware behavior.
 
 Previous observations on my laptop reported inhibit readback as GBCC
 mode 4 and hold surviving one approximately 12.5-minute shutdown trial.
