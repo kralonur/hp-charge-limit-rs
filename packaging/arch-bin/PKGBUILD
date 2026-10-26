@@ -1,6 +1,6 @@
 # Prebuilt release package: cd packaging/arch-bin && makepkg -si
 pkgname=hp-charge-limit-rs-bin
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc="Battery charge limiter via ACPI WMI (prebuilt binary)"
 arch=('x86_64' 'aarch64')
@@ -12,11 +12,11 @@ conflicts=('hp-charge-limit-rs')
 backup=('etc/hp-charge-limit-rs.conf')
 options=('!debug' '!strip')
 
-# Verified v0.2.0 release archive checksums.
+# Fill in verified archive checksums after publishing v0.3.0; do not use SKIP.
 source_x86_64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
-sha256sums_x86_64=('6a3132d4b6caad05d9af6d3a1164eb813f2c2da8f29fa15339689e031d7385ed')
+sha256sums_x86_64=('PENDING_V0_3_0_X86_64_SHA256')
 source_aarch64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
-sha256sums_aarch64=('d5f701a1aa276e648edc0deba695e09645cc77cebd13a6e34a0ae2399cc4a517')
+sha256sums_aarch64=('PENDING_V0_3_0_AARCH64_SHA256')
 
 _install_completions() {
   local _cmd="$1"
@@ -39,6 +39,8 @@ package() {
   install -Dm755 hp-charge-limit-rs "$pkgdir/usr/bin/hp-charge-limit-rs"
   install -Dm644 packaging/hp-charge-limit-rs.service "$pkgdir/usr/lib/systemd/system/hp-charge-limit-rs.service"
   install -Dm644 packaging/hp-charge-limit-rs.conf "$pkgdir/etc/hp-charge-limit-rs.conf"
+  install -Dm644 packaging/io.github.kralonur.HpChargeLimit.conf "$pkgdir/usr/share/dbus-1/system.d/io.github.kralonur.HpChargeLimit.conf"
+  install -Dm644 packaging/io.github.kralonur.HpChargeLimit.Notify.desktop "$pkgdir/etc/xdg/autostart/io.github.kralonur.HpChargeLimit.Notify.desktop"
   install -Dm644 README.md "$pkgdir/usr/share/doc/hp-charge-limit-rs/README.md"
   install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
   install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
