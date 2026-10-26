@@ -64,6 +64,7 @@ jobs:
           install -m755 "target/$TARGET/release/hp-charge-limit-rs" "dist/$name/"
           install -m644 README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           install -m644 packaging/hp-charge-limit-rs.{service,conf} "dist/$name/packaging/"
+          install -m644 packaging/io.github.kralonur.HpChargeLimit.conf packaging/io.github.kralonur.HpChargeLimit.Notify.desktop "dist/$name/packaging/"
           cd dist
           tar -czf "$name.tar.gz" "$name"
           sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"

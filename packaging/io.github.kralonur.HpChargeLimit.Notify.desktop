@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=HP Charge Limit Notifications
+Comment=Desktop notifications from the hp-charge-limit-rs daemon
+Icon=battery
+TryExec=hp-charge-limit-rs
+Exec=hp-charge-limit-rs notify
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
