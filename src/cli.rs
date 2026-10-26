@@ -27,6 +27,8 @@ pub enum Cmd {
         #[arg(long, value_name = "SECS")]
         watch: Option<u64>,
     },
+    /// Diagnose supplies, acpi_call access, firmware readback and service setup
+    Diagnose,
     /// Set a firmware charge mode once
     Set { mode: Mode },
     /// Pause or resume charge limiting until reboot (applied on the next daemon poll)

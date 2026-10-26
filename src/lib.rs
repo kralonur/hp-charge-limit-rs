@@ -11,6 +11,7 @@
 pub mod cli;
 mod bypass;
 mod daemon;
+mod diagnose;
 mod firmware;
 mod offstate;
 mod paths;
@@ -26,6 +27,7 @@ use firmware::{ChargeControl, Wmi};
 pub fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Status { watch } => status::show(watch),
+        Cmd::Diagnose => diagnose::run(),
         Cmd::Set { mode } => {
             let mut wmi = Wmi;
             wmi.set(mode)?;

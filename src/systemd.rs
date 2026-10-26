@@ -21,3 +21,13 @@ pub fn system_stopping() -> bool {
 pub fn service_state() -> String {
     systemctl(&["is-active", SERVICE]).unwrap_or_else(|| "?".into())
 }
+
+/// Where the service's unit, drop-ins and environment come from, as
+/// `Key=value` lines; None if systemctl failed.
+pub fn service_config() -> Option<String> {
+    let out = Command::new("systemctl")
+        .args(["show", "--no-pager", "--property=LoadState,UnitFileState,FragmentPath,DropInPaths,ExecStart,EnvironmentFiles", SERVICE])
+        .output()
+        .ok()?;
+    out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
