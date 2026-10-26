@@ -4,7 +4,7 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="Battery charge limiter via ACPI WMI"
 arch=('x86_64')
-license=('unknown')
+license=('MIT OR Apache-2.0')
 depends=('acpi_call' 'gcc-libs' 'glibc')
 makedepends=('cargo')
 backup=('etc/hp-charge-limit-rs.conf')
@@ -33,4 +33,6 @@ package() {
   install -Dm644 packaging/hp-charge-limit-rs.service "$pkgdir/usr/lib/systemd/system/hp-charge-limit-rs.service"
   install -Dm644 packaging/hp-charge-limit-rs.conf "$pkgdir/etc/hp-charge-limit-rs.conf"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
 }
