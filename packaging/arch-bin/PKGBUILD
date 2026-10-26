@@ -12,11 +12,11 @@ conflicts=('hp-charge-limit-rs')
 backup=('etc/hp-charge-limit-rs.conf')
 options=('!debug' '!strip')
 
-# Fill in verified archive checksums after publishing v0.3.0; do not use SKIP.
+# Verified v0.3.0 release archive checksums.
 source_x86_64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
-sha256sums_x86_64=('PENDING_V0_3_0_X86_64_SHA256')
+sha256sums_x86_64=('a13be5208bde2811545466e07c0a83f3e6d30254201978add67f94d8f51e0a9d')
 source_aarch64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
-sha256sums_aarch64=('PENDING_V0_3_0_AARCH64_SHA256')
+sha256sums_aarch64=('799fa1ef0a62dc48f84d300a551da226349a8d71d624e5d433bddc785ad00819')
 
 _install_completions() {
   local _cmd="$1"
