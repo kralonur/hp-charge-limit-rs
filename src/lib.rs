@@ -20,6 +20,7 @@ mod systemd;
 
 use anyhow::Result;
 use cli::{Cli, Cmd};
+use clap::CommandFactory;
 use firmware::{ChargeControl, Wmi};
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -33,5 +34,10 @@ pub fn run(cli: Cli) -> Result<()> {
         }
         Cmd::Bypass { action } => bypass::set(action),
         Cmd::Daemon(opts) => daemon::run(&opts),
+        Cmd::Completions { shell } => {
+            let mut command = Cli::command();
+            clap_complete::generate(shell, &mut command, "hp-charge-limit-rs", &mut std::io::stdout());
+            Ok(())
+        }
     }
 }

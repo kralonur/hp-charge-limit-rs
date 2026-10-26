@@ -1,6 +1,6 @@
 # Local package built from this checkout: cd packaging/arch && makepkg -si
 pkgname=hp-charge-limit-rs
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Battery charge limiter via ACPI WMI"
 arch=('x86_64')
@@ -27,6 +27,22 @@ check() {
   cargo test --frozen --release
 }
 
+_install_completions() {
+  local _cmd="$1"
+
+  "$pkgdir/usr/bin/$_cmd" completions bash > "$srcdir/$_cmd.bash"
+  "$pkgdir/usr/bin/$_cmd" completions zsh > "$srcdir/$_cmd.zsh"
+  "$pkgdir/usr/bin/$_cmd" completions fish > "$srcdir/$_cmd.fish"
+  "$pkgdir/usr/bin/$_cmd" completions elvish > "$srcdir/$_cmd.elvish"
+  "$pkgdir/usr/bin/$_cmd" completions powershell > "$srcdir/$_cmd.ps1"
+
+  install -Dm644 "$srcdir/$_cmd.bash" "$pkgdir/usr/share/bash-completion/completions/$_cmd"
+  install -Dm644 "$srcdir/$_cmd.zsh" "$pkgdir/usr/share/zsh/site-functions/_$_cmd"
+  install -Dm644 "$srcdir/$_cmd.fish" "$pkgdir/usr/share/fish/vendor_completions.d/$_cmd.fish"
+  install -Dm644 "$srcdir/$_cmd.elvish" "$pkgdir/usr/share/elvish/lib/$_cmd.elv"
+  install -Dm644 "$srcdir/$_cmd.ps1" "$pkgdir/usr/share/powershell/Completions/$_cmd.ps1"
+}
+
 package() {
   cd "$_root"
   install -Dm755 target/release/hp-charge-limit-rs "$pkgdir/usr/bin/hp-charge-limit-rs"
@@ -35,4 +51,5 @@ package() {
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
   install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+  _install_completions hp-charge-limit-rs
 }

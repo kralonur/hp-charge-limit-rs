@@ -33,6 +33,11 @@ pub enum Cmd {
     Bypass { action: BypassAction },
     /// Run the limiter loop (what the systemd service runs)
     Daemon(DaemonOpts),
+    /// Generate a shell completion script (no root required)
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]

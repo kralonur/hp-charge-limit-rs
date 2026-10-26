@@ -1,7 +1,7 @@
 # Prebuilt release package: cd packaging/arch-bin && makepkg -si
 pkgname=hp-charge-limit-rs-bin
-pkgver=0.1.0
-pkgrel=2
+pkgver=0.2.0
+pkgrel=1
 pkgdesc="Battery charge limiter via ACPI WMI (prebuilt binary)"
 arch=('x86_64' 'aarch64')
 url="https://github.com/kralonur/hp-charge-limit-rs"
@@ -12,15 +12,27 @@ conflicts=('hp-charge-limit-rs')
 backup=('etc/hp-charge-limit-rs.conf')
 options=('!debug' '!strip')
 
-# v0.1.0 predates the license files in release archives.
-source=("https://raw.githubusercontent.com/kralonur/hp-charge-limit-rs/f951f28dee57fb08193899039b0987f9dc9e7d9f/LICENSE-MIT"
-        "https://raw.githubusercontent.com/kralonur/hp-charge-limit-rs/f951f28dee57fb08193899039b0987f9dc9e7d9f/LICENSE-APACHE")
-sha256sums=('fffb44aca16588eebae3e3e9a820c02ea28bd4d56d283b9f4df7fd9916819828'
-            'cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30')
+# Fill in verified archive checksums after publishing v0.2.0; do not use SKIP.
 source_x86_64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-x86_64-unknown-linux-musl.tar.gz")
-sha256sums_x86_64=('833d90967f2a4d08b43c4f47afdeead3f757ffd9a2d08843f3d283eac7027e46')
+sha256sums_x86_64=('PENDING_V0_2_0_X86_64_SHA256')
 source_aarch64=("$url/releases/download/v$pkgver/hp-charge-limit-rs-v$pkgver-aarch64-unknown-linux-musl.tar.gz")
-sha256sums_aarch64=('761e146ff1a913c9665fc9f1d68adb54b72e55d231dcd91a5cd465c5b2140fec')
+sha256sums_aarch64=('PENDING_V0_2_0_AARCH64_SHA256')
+
+_install_completions() {
+  local _cmd="$1"
+
+  "$pkgdir/usr/bin/$_cmd" completions bash > "$srcdir/$_cmd.bash"
+  "$pkgdir/usr/bin/$_cmd" completions zsh > "$srcdir/$_cmd.zsh"
+  "$pkgdir/usr/bin/$_cmd" completions fish > "$srcdir/$_cmd.fish"
+  "$pkgdir/usr/bin/$_cmd" completions elvish > "$srcdir/$_cmd.elvish"
+  "$pkgdir/usr/bin/$_cmd" completions powershell > "$srcdir/$_cmd.ps1"
+
+  install -Dm644 "$srcdir/$_cmd.bash" "$pkgdir/usr/share/bash-completion/completions/$_cmd"
+  install -Dm644 "$srcdir/$_cmd.zsh" "$pkgdir/usr/share/zsh/site-functions/_$_cmd"
+  install -Dm644 "$srcdir/$_cmd.fish" "$pkgdir/usr/share/fish/vendor_completions.d/$_cmd.fish"
+  install -Dm644 "$srcdir/$_cmd.elvish" "$pkgdir/usr/share/elvish/lib/$_cmd.elv"
+  install -Dm644 "$srcdir/$_cmd.ps1" "$pkgdir/usr/share/powershell/Completions/$_cmd.ps1"
+}
 
 package() {
   cd "$srcdir/hp-charge-limit-rs-v$pkgver-$CARCH-unknown-linux-musl"
@@ -28,6 +40,7 @@ package() {
   install -Dm644 packaging/hp-charge-limit-rs.service "$pkgdir/usr/lib/systemd/system/hp-charge-limit-rs.service"
   install -Dm644 packaging/hp-charge-limit-rs.conf "$pkgdir/etc/hp-charge-limit-rs.conf"
   install -Dm644 README.md "$pkgdir/usr/share/doc/hp-charge-limit-rs/README.md"
-  install -Dm644 "$srcdir/LICENSE-MIT" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
-  install -Dm644 "$srcdir/LICENSE-APACHE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$pkgdir/usr/share/licenses/$pkgname/LICENSE-APACHE"
+  _install_completions hp-charge-limit-rs
 }
