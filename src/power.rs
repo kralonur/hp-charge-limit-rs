@@ -1,12 +1,38 @@
 //! Battery and AC adapter readings from sysfs.
 
-use crate::paths::{self, ADAPTER, BATTERY};
+use crate::paths::{self, POWER_SUPPLY};
 use std::fmt;
+use std::fs;
 use std::ops::Sub;
+use std::path::PathBuf;
 
 const MICRO_PER_MILLI: i64 = 1_000;
 const MICRO_PER_UNIT: f64 = 1_000_000.0;
 const ADAPTER_ONLINE: &str = "1";
+
+/// Discover afresh so hotplugged supplies appear on the next read.
+/// Prefer BAT1 for compatibility, then use stable alphabetical ordering.
+fn supplies() -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(paths::at(POWER_SUPPLY)) else { return Vec::new() };
+    let mut supplies: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| paths::read_trimmed(&path.join("scope")).as_deref() != Some("Device"))
+        .collect();
+    supplies.sort_by(|a, b| (!a.ends_with("BAT1"), a).cmp(&(!b.ends_with("BAT1"), b)));
+    supplies
+}
+
+pub fn battery() -> Option<PathBuf> {
+    supplies().into_iter().find(|path| {
+        paths::read_trimmed(&path.join("type")).as_deref() == Some("Battery")
+            && paths::read_trimmed(&path.join("present")).as_deref() != Some("0")
+    })
+}
+
+fn battery_attr(name: &str) -> Option<String> {
+    paths::read_trimmed(&battery()?.join(name))
+}
 
 /// Battery energy in µWh, the unit of sysfs `energy_now`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -64,23 +90,23 @@ pub struct Reading {
 }
 
 pub fn capacity() -> Option<u8> {
-    paths::attr(BATTERY, "capacity")?.parse().ok()
+    battery_attr("capacity")?.parse().ok()
 }
 
 pub fn energy() -> Option<Energy> {
-    paths::attr(BATTERY, "energy_now")?.parse().ok().map(Energy)
+    battery_attr("energy_now")?.parse().ok().map(Energy)
 }
 
 pub fn voltage() -> Option<Voltage> {
-    paths::attr(BATTERY, "voltage_now")?.parse().ok().map(Voltage)
+    battery_attr("voltage_now")?.parse().ok().map(Voltage)
 }
 
 pub fn status() -> Option<String> {
-    paths::attr(BATTERY, "status")
+    battery_attr("status")
 }
 
 fn number(name: &str) -> Option<f64> {
-    paths::attr(BATTERY, name)?.parse::<i64>().ok().map(|n| n as f64)
+    battery_attr(name)?.parse::<i64>().ok().map(|n| n as f64)
 }
 
 /// Full capacity relative to design capacity; charge-based batteries are supported too.
@@ -96,7 +122,7 @@ pub fn health() -> Option<f64> {
 }
 
 pub fn cycles() -> Option<u64> {
-    paths::attr(BATTERY, "cycle_count")?.parse().ok()
+    battery_attr("cycle_count")?.parse().ok()
 }
 
 /// Prefer power_now; otherwise derive watts from current_now and voltage_now.
@@ -107,15 +133,26 @@ pub fn power_watts() -> Option<f64> {
 }
 
 pub fn manufacturer() -> Option<String> {
-    paths::attr(BATTERY, "manufacturer")
+    battery_attr("manufacturer")
 }
 
 pub fn model() -> Option<String> {
-    paths::attr(BATTERY, "model_name")
+    battery_attr("model_name")
+}
+
+pub fn adapters() -> Vec<PathBuf> {
+    supplies().into_iter()
+        .filter(|path| {
+            let kind = paths::read_trimmed(&path.join("type")).unwrap_or_default();
+            matches!(kind.as_str(), "Mains" | "Wireless") || kind.starts_with("USB")
+        })
+        .collect()
 }
 
 pub fn on_ac() -> bool {
-    paths::attr(ADAPTER, "online").as_deref() == Some(ADAPTER_ONLINE)
+    adapters().into_iter().any(|path| {
+        paths::read_trimmed(&path.join("online")).as_deref() == Some(ADAPTER_ONLINE)
+    })
 }
 
 pub fn reading() -> Option<Reading> {
