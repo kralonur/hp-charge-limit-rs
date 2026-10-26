@@ -61,9 +61,15 @@ the limitations described below.
 Requires Linux, systemd for the service, and the `acpi_call` module built for
 your running kernel. Install the module using your distribution's packages;
 DKMS packages also need matching kernel headers. Firmware access requires
-root. The sysfs paths are currently fixed to battery `BAT1` and adapter `ACAD`.
-Some module packages, including Arch's `acpi_call`, already configure
+root. Some module packages, including Arch's `acpi_call`, already configure
 loading at boot; no additional module-load file is needed in that case.
+
+Power supplies are discovered under `/sys/class/power_supply` by type,
+ignoring peripherals marked `scope=Device`. One present battery is
+selected: `BAT1` if available, otherwise the first battery in alphabetical
+name order. Multiple batteries are not aggregated. Any online system-level
+mains, USB, or wireless supply counts as external power. Discovery is refreshed
+on each read to handle hotplug. Discovery does not establish firmware compatibility.
 
 ### Linux (manual installation)
 
@@ -73,12 +79,14 @@ Choose `x86_64-unknown-linux-musl` for x86_64 PCs or
 `aarch64-unknown-linux-musl` for ARM64 Linux. These are static binaries;
 you still need the kernel module and compatible firmware.
 
-For example, for the `v0.2.0` x86_64 release:
+For example, for an x86_64 release (set `name` to the archive you downloaded,
+without `.tar.gz`):
 
 ```sh
-sha256sum --check hp-charge-limit-rs-v0.2.0-x86_64-unknown-linux-musl.tar.gz.sha256
-tar -xzf hp-charge-limit-rs-v0.2.0-x86_64-unknown-linux-musl.tar.gz
-cd hp-charge-limit-rs-v0.2.0-x86_64-unknown-linux-musl
+name=hp-charge-limit-rs-vX.Y.Z-x86_64-unknown-linux-musl
+sha256sum --check "$name.tar.gz.sha256"
+tar -xzf "$name.tar.gz"
+cd "$name"
 binary=./hp-charge-limit-rs
 ```
 
@@ -97,17 +105,17 @@ sudo "$binary" status
 ```
 
 The binary does not install itself. From the extracted archive or source
-checkout, install it and the systemd service:
+checkout, install it, the systemd service, and the
+[desktop notification](#desktop-notifications) bus policy and autostart entry:
 
 ```sh
 sudo install -Dm755 "$binary" /usr/bin/hp-charge-limit-rs
 sudo install -Dm644 packaging/hp-charge-limit-rs.service /etc/systemd/system/hp-charge-limit-rs.service
+sudo install -Dm644 packaging/io.github.kralonur.HpChargeLimit.conf /usr/share/dbus-1/system.d/io.github.kralonur.HpChargeLimit.conf
+sudo install -Dm644 packaging/io.github.kralonur.HpChargeLimit.Notify.desktop /etc/xdg/autostart/io.github.kralonur.HpChargeLimit.Notify.desktop
 sudo install -Dm644 README.md /usr/share/doc/hp-charge-limit-rs/README.md
-# Older release archives may not contain the license files.
-if [ -f LICENSE-MIT ]; then
-    sudo install -Dm644 LICENSE-MIT /usr/share/licenses/hp-charge-limit-rs/LICENSE-MIT
-    sudo install -Dm644 LICENSE-APACHE /usr/share/licenses/hp-charge-limit-rs/LICENSE-APACHE
-fi
+sudo install -Dm644 LICENSE-MIT /usr/share/licenses/hp-charge-limit-rs/LICENSE-MIT
+sudo install -Dm644 LICENSE-APACHE /usr/share/licenses/hp-charge-limit-rs/LICENSE-APACHE
 # First install only: do not overwrite an existing configuration.
 sudo install -Dm644 packaging/hp-charge-limit-rs.conf /etc/hp-charge-limit-rs.conf
 sudo systemctl daemon-reload
@@ -129,6 +137,8 @@ To uninstall a manual installation:
 ```sh
 sudo systemctl disable --now hp-charge-limit-rs
 sudo rm /usr/bin/hp-charge-limit-rs /etc/systemd/system/hp-charge-limit-rs.service
+sudo rm -f /usr/share/dbus-1/system.d/io.github.kralonur.HpChargeLimit.conf \
+    /etc/xdg/autostart/io.github.kralonur.HpChargeLimit.Notify.desktop
 sudo systemctl daemon-reload
 # Only if you created this file during installation:
 sudo rm -f /etc/modules-load.d/hp-charge-limit-rs.conf
@@ -173,7 +183,8 @@ Arch's `acpi_call` package already installs
 `/usr/lib/modules-load.d/acpi_call.conf` to load the module at boot.
 `modprobe` above loads it for the current session if needed; do not add a
 duplicate config. If you use a different module package, check its setup.
-The package installs the binary, unit, documentation, and configuration;
+The package installs the binary, unit, configuration, documentation, D-Bus
+policy, and notifier autostart entry;
 `/etc/hp-charge-limit-rs.conf` is preserved on upgrades. Edit it and restart the
 service to change settings.
 
@@ -197,7 +208,7 @@ journalctl -u hp-charge-limit-rs -b         # daemon log for this boot
 The running daemon can overwrite one-off mode changes on subsequent polls.
 Stop the service first if you want manual control.
 
-Since 0.2.0, status also shows battery manufacturer/model, health
+Status also shows battery manufacturer/model, health
 (full capacity relative to design capacity), cycle count, and power in watts.
 Missing readings are shown as `?`. Power uses `power_now`, or current × voltage
 when available; health supports both energy- and charge-based sysfs values.
@@ -206,9 +217,102 @@ when the adapter powers the laptop and the battery is neither charging nor
 discharging. Cycle count is firmware-reported: a zero may mean an unused battery
 or an unimplemented/inaccurate firmware reading. Health is a capacity estimate,
 not an independent battery diagnostic.
-These status additions and bypass below require version 0.2.0 or newer.
 
-### Shell completion (0.2.0)
+### Setup diagnostics
+
+```sh
+sudo hp-charge-limit-rs diagnose
+```
+
+Checks battery discovery and capacity, external power supplies, the
+`acpi_call` interface and access permissions, and firmware mode readback.
+Reports service state and systemd unit/configuration paths; it does not
+validate configuration values. An offline adapter is normal. Missing required
+supplies, invalid readings, access failures, or failed firmware queries give a
+nonzero exit status. An inactive/missing service or unavailable systemd is only
+a warning, since manual commands do not require the service.
+
+No charge modes are set, modules loaded, or services changed. Firmware readback
+still issues a GBCC query through `/proc/acpi/call` (requiring write access),
+not an SBCC mode-setting call. Running without sudo can report permission
+failures. Successful diagnostics do not prove firmware compatibility or actual
+charge blocking.
+
+### Desktop notifications
+
+The daemon runs as root, so it cannot show notifications itself. Instead it
+broadcasts D-Bus signals on the **system bus**, and a small helper running as
+your desktop user turns them into standard freedesktop notifications. KDE
+Plasma, GNOME and other desktops with a notification server display them.
+
+| signal | when | notification |
+|---|---|---|
+| `LimitReached(y capacity)` | charging blocked at the stop threshold | Charge limit reached |
+| `ChargingResumed(y capacity)` | charging allowed again at the start threshold | Charging resumed |
+| `BypassChanged(b enabled)` | bypass took effect or ended | Charge limit paused / resumed |
+| `WriteFailed(s mode, s error)` | a firmware write failed (once per run of failures) | Charge control failed (critical) |
+
+Like other desktop helpers for system services (KDE Discover's update
+notifier, nm-applet, earlyoom's systembus-notify), the notifier is an XDG
+autostart entry: it starts with every graphical login (KDE, GNOME, XFCE and
+others), and never in SSH or TTY sessions. Both installation methods above
+install the bus policy and the entry. When upgrading a running system,
+restart the daemon once so it can claim its bus name, then log out and back
+in (or run `hp-charge-limit-rs notify &` for now):
+
+```sh
+sudo systemctl restart hp-charge-limit-rs
+```
+
+The entry runs `hp-charge-limit-rs` from `PATH`. You can also just run
+`hp-charge-limit-rs notify` in a terminal as your user, without root.
+
+To turn notifications off:
+
+- For yourself only, hide the autostart entry the standard way, which also
+  survives package upgrades:
+
+  ```sh
+  mkdir -p ~/.config/autostart
+  printf '[Desktop Entry]\nHidden=true\n' > ~/.config/autostart/io.github.kralonur.HpChargeLimit.Notify.desktop
+  ```
+
+- For everyone, stop the daemon sending signals: set
+  `HP_CHARGE_LIMIT_RS_NOTIFY=false` in `/etc/hp-charge-limit-rs.conf` and
+  restart the service. Running notifiers then stay idle.
+
+Behavior and limits:
+
+- Signals only, no D-Bus methods: nothing on the bus can change charging.
+  Only root may own the bus name `io.github.kralonur.HpChargeLimit` (see the
+  policy file), and the notifier accepts signals only from that name's
+  current owner, including signals sent directly to it, so other users cannot
+  fake notifications.
+- Best effort. If the bus or the policy is missing, the daemon logs
+  `D-Bus: signals disabled` once and keeps limiting normally. It retries at
+  most once a minute, and only when it has an event to send. Events raised
+  during an outage are dropped, not queued.
+- Events come from the limiter's state changes, which only happen on AC power.
+  Repeated failures while the firmware keeps refusing produce one
+  notification, not one per poll. A new notification replaces the previous one
+  instead of stacking.
+- Starting, shutting down and stopping the service do not notify, except that
+  a failed write at startup is reported. Every user running the notifier sees
+  the notifications.
+- Watch the raw signals with `busctl --system monitor io.github.kralonur.HpChargeLimit`.
+- The D-Bus library accounts for most of the binary size (about 5 MB
+  unstripped in a release build) and of the locked dependencies.
+
+What was verified: against private system and session buses with the bus's
+default policy, a fake notification server and the real daemon on fake sysfs/ACPI
+files (event delivery, replacement, failure deduplication, no bus, name
+denied, spoofed senders, malformed payloads, escaped markup, missing
+notification server, bus loss, reconnection after the back-off, clean exit on
+SIGTERM). The static x86_64 musl build was checked the same way. Not verified:
+a real KDE or GNOME shell, the root-owned name on a real system bus (tests used
+the current user in the policy instead of root), and the aarch64 build.
+
+### Shell completion
 
 Both Arch packages install completion files for Bash, Zsh, Fish, Elvish, and
 PowerShell. Bash needs the `bash-completion` package installed and enabled for
@@ -270,6 +374,8 @@ Each is a `daemon` flag or the environment variable in brackets
 - `--stop-mode auto` (`_STOP_MODE`): mode set when only the service is stopped (`systemctl stop`);
   with auto a stopped service leaves the laptop stock, including while off
 - `--interval 30` (`_INTERVAL`): poll interval in seconds (minimum 5)
+- `--notify true` (`_NOTIFY`): broadcast D-Bus signals for desktop
+  notifications; `false` keeps the daemon off the bus entirely
 
 Percentages must be within 0–100, with `start < stop` and `stop >= 1`.
 `--run-mode` accepts `auto`, `inhibit`, or `hold`; both exit modes also accept
@@ -286,16 +392,18 @@ At shutdown it saves energy_now; at the next start it logs
 ## Publishing releases
 
 The Linux release workflow uses current stable Rust and builds static
-x86_64 and ARM64 binaries. New archives include the binary, README,
-licenses, systemd unit, and default config, with a separate SHA256 checksum.
+x86_64 and ARM64 binaries. Archives include the binary, README, licenses,
+systemd unit, default config, D-Bus policy, and notifier autostart entry, with
+a separate SHA256 checksum.
 
-Set the version in `Cargo.toml`, update `Cargo.lock`, commit, then push a
-matching version tag to GitHub:
+Set the version in `Cargo.toml` and both PKGBUILDs, update `Cargo.lock`,
+commit, then push a matching version tag to GitHub:
 
 ```sh
-git tag v0.2.0
+version=$(cargo pkgid | cut -d'#' -f2)
+git tag "v$version"
 git push origin main
-git push origin v0.2.0
+git push origin "v$version"
 ```
 
 After publishing, replace the checksum placeholders in
@@ -319,13 +427,17 @@ removed before rerunning its publishing job.
 | `power` | sysfs battery/AC readings, `Energy`/`Voltage` unit types |
 | `offstate` | energy record across shutdown |
 | `bypass` | temporary bypass flag shared by the CLI and daemon |
+| `diagnose` | setup checks, GBCC readback, service configuration reporting; no mode changes |
+| `events` | D-Bus signal definitions and the daemon-side emitter (best effort) |
+| `notify` | user-side helper turning those signals into desktop notifications |
 | `status`, `systemd`, `paths` | status command, systemctl queries, system paths |
 
 During normal polling, a failed threshold transition keeps the current state
 and is retried on the next AC-powered poll if the threshold condition still
-holds. At startup, a failed run-mode write leaves the state as charging; if the
-battery is between thresholds, the write is not retried until it reaches the
-stop threshold. Successful writes mean the ACPI call returned without an
+holds. If a startup write fails, initialization is retried on each AC-powered
+poll, including between thresholds. Each retry uses the current capacity and
+bypass request to select the mode. After a successful write, normal hysteresis
+resumes. Successful writes mean the ACPI call returned without an
 `acpi_call` error, not independent verification of charge flow. `finish`
 consumes the limiter, so nothing ticks after it.
 
