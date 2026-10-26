@@ -14,6 +14,7 @@ mod daemon;
 mod diagnose;
 mod events;
 mod firmware;
+mod notify;
 mod offstate;
 mod paths;
 mod power;
@@ -29,6 +30,7 @@ pub fn run(cli: Cli) -> Result<()> {
     match cli.cmd {
         Cmd::Status { watch } => status::show(watch),
         Cmd::Diagnose => diagnose::run(),
+        Cmd::Notify => notify::run(),
         Cmd::Set { mode } => {
             let mut wmi = Wmi;
             wmi.set(mode)?;

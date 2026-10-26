@@ -5,6 +5,7 @@
 //! charge control, and only root may own `NAME` (see the bus policy file).
 
 use crate::firmware::Mode;
+use clap::ValueEnum;
 use std::time::{Duration, Instant};
 use zbus::Message;
 use zbus::blocking::Connection;
@@ -38,7 +39,25 @@ impl Event {
         }
     }
 
-    /// The broadcast signal carrying this event.
+    /// The event a received signal carries; None for unknown members or
+    /// malformed bodies. Does not check the sender.
+    pub fn parse(msg: &Message) -> Option<Event> {
+        let header = msg.header();
+        let body = msg.body();
+        let event = match header.member()?.as_str() {
+            "LimitReached" => Event::LimitReached { capacity: body.deserialize::<(u8,)>().ok()?.0 },
+            "ChargingResumed" => Event::ChargingResumed { capacity: body.deserialize::<(u8,)>().ok()?.0 },
+            "BypassChanged" => Event::BypassChanged { enabled: body.deserialize::<(bool,)>().ok()?.0 },
+            "WriteFailed" => {
+                let (mode, error): (String, String) = body.deserialize().ok()?;
+                Event::WriteFailed { mode: Mode::from_str(&mode, false).ok()?, error }
+            }
+            _ => return None,
+        };
+        Some(event)
+    }
+
+    /// The broadcast signal carrying this event; `parse` reverses it.
     fn message(&self) -> zbus::Result<Message> {
         let signal = Message::signal(PATH, INTERFACE, self.signal())?;
         match self {

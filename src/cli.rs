@@ -29,6 +29,8 @@ pub enum Cmd {
     },
     /// Diagnose supplies, acpi_call access, firmware readback and service setup
     Diagnose,
+    /// Show desktop notifications for daemon D-Bus signals (run as your user, no root)
+    Notify,
     /// Set a firmware charge mode once
     Set { mode: Mode },
     /// Pause or resume charge limiting until reboot (applied on the next daemon poll)
