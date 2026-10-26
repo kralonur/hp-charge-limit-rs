@@ -1,0 +1,19 @@
+[Unit]
+Description=Battery charge limiter via ACPI WMI
+Documentation=file:///usr/share/doc/hp-charge-limit-rs/README.md
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/hp-charge-limit-rs.conf
+ExecStart=/usr/bin/hp-charge-limit-rs daemon
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+StateDirectory=hp-charge-limit-rs
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
