@@ -5,6 +5,7 @@ mod limiter;
 pub use limiter::StopAction;
 
 use crate::cli::DaemonOpts;
+use crate::events::Emitter;
 use crate::firmware::Wmi;
 use crate::{bypass, offstate, power, systemd};
 use anyhow::{Result, ensure};
@@ -34,12 +35,21 @@ fn termination() -> Result<Receiver<()>> {
     Ok(rx)
 }
 
+/// Sends the limiter's new events, or drops them with notifications off;
+/// taken either way so they never pile up.
+fn publish(limiter: &mut Limiter, emitter: Option<&mut Emitter>) {
+    let events = limiter.take_events();
+    if let Some(emitter) = emitter {
+        emitter.emit_all(events);
+    }
+}
+
 pub fn run(o: &DaemonOpts) -> Result<()> {
     ensure!(o.start < o.stop, "--start ({}) must be below --stop ({})", o.start, o.stop);
     let terminate = termination()?;
     println!(
-        "hp-charge-limit-rs: stop={}% start={}% poll={}s run={} off={} (min {}%) stop-mode={}",
-        o.stop, o.start, o.interval, o.run_mode, o.off_mode, o.off_min, o.stop_mode
+        "hp-charge-limit-rs: stop={}% start={}% poll={}s run={} off={} (min {}%) stop-mode={} notify={}",
+        o.stop, o.start, o.interval, o.run_mode, o.off_mode, o.off_min, o.stop_mode, o.notify
     );
     if let Some(line) = offstate::report() {
         println!("{line}");
@@ -49,11 +59,14 @@ pub fn run(o: &DaemonOpts) -> Result<()> {
     let band = Band { stop: o.stop, start: o.start, run_mode: o.run_mode };
     let interval = Duration::from_secs(o.interval);
     let mut wmi = Wmi;
+    let mut emitter = o.notify.then(Emitter::new);
     let mut limiter = Limiter::start(band, capacity(), bypass::enabled(), &mut wmi);
+    publish(&mut limiter, emitter.as_mut());
     // wait one interval for a signal; a timeout is the next tick
     while let Err(RecvTimeoutError::Timeout) = terminate.recv_timeout(interval) {
         if let Some(reading) = power::reading() {
             limiter.tick(reading, bypass::enabled(), &mut wmi);
+            publish(&mut limiter, emitter.as_mut());
         }
     }
 

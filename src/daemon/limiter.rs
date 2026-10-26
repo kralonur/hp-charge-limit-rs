@@ -9,6 +9,7 @@
 //! otherwise the state stays and the next tick retries. `finish` consumes
 //! the limiter, so nothing can tick after it.
 
+use crate::events::Event;
 use crate::firmware::{ChargeControl, Mode};
 use crate::power::Reading;
 use clap::ValueEnum;
@@ -32,41 +33,68 @@ pub enum State {
 pub struct Limiter {
     band: Band,
     state: State,
-}
-
-/// Sets `mode` and logs `<label>: cap=..% -> <mode>`; true if it took.
-fn set_logged(fw: &mut impl ChargeControl, mode: Mode, label: &str, capacity: u8) -> bool {
-    match fw.set(mode) {
-        Ok(()) => {
-            println!("{label}: cap={capacity}% -> {mode}");
-            true
-        }
-        Err(e) => {
-            eprintln!("{label}: cap={capacity}% -> {mode} FAILED: {e:#}");
-            false
-        }
-    }
-}
-
-/// Re-set every cycle while in its zone: harmless when already set, and
-/// repairs a mode changed behind our back.
-fn reassert(fw: &mut impl ChargeControl, mode: Mode) {
-    if let Err(e) = fw.set(mode) {
-        eprintln!("set {mode}: {e:#}");
-    }
+    events: Vec<Event>,
+    /// The last firmware write failed; keeps a failing run to one event
+    failing: bool,
 }
 
 impl Limiter {
+    /// Sets `mode`; a failure queues one `WriteFailed` per run of failures.
+    fn attempt(&mut self, fw: &mut impl ChargeControl, mode: Mode) -> Result<(), String> {
+        match fw.set(mode) {
+            Ok(()) => {
+                self.failing = false;
+                Ok(())
+            }
+            Err(e) => {
+                let error = format!("{e:#}");
+                if !self.failing {
+                    self.events.push(Event::WriteFailed { mode, error: error.clone() });
+                }
+                self.failing = true;
+                Err(error)
+            }
+        }
+    }
+
+    /// Sets `mode` and logs `<label>: cap=..% -> <mode>`; true if it took.
+    fn write(&mut self, fw: &mut impl ChargeControl, mode: Mode, label: &str, capacity: u8) -> bool {
+        match self.attempt(fw, mode) {
+            Ok(()) => {
+                println!("{label}: cap={capacity}% -> {mode}");
+                true
+            }
+            Err(e) => {
+                eprintln!("{label}: cap={capacity}% -> {mode} FAILED: {e}");
+                false
+            }
+        }
+    }
+
+    /// Re-set every cycle while in its zone: harmless when already set, and
+    /// repairs a mode changed behind our back.
+    fn reassert(&mut self, fw: &mut impl ChargeControl, mode: Mode) {
+        if let Err(e) = self.attempt(fw, mode) {
+            eprintln!("set {mode}: {e}");
+        }
+    }
+
+    /// Events since the last call, oldest first.
+    pub fn take_events(&mut self) -> Vec<Event> {
+        std::mem::take(&mut self.events)
+    }
+
     /// Always sets a mode, replacing whatever was left (e.g. hold from the
     /// last shutdown); above `start` it keeps limiting unless bypassed.
     pub fn start(band: Band, capacity: u8, bypass: bool, fw: &mut impl ChargeControl) -> Self {
-        let mut limiter = Limiter { band, state: State::Starting };
+        let mut limiter = Limiter { band, state: State::Starting, events: Vec::new(), failing: false };
         limiter.enter(capacity, bypass, fw);
         limiter
     }
 
     /// Sets the mode `capacity` and `bypass` call for, ignoring hysteresis:
-    /// used at start (retried while it fails) and when bypass begins or ends.
+    /// used at start (retried while it fails) and when bypass begins or
+    /// ends. Only bypass changes after a successful start notify.
     fn enter(&mut self, capacity: u8, bypass: bool, fw: &mut impl ChargeControl) {
         let (mode, state) = if bypass {
             (Mode::Auto, State::Bypassed)
@@ -80,7 +108,10 @@ impl Limiter {
             State::Bypassed => "resume",
             _ => "start",
         };
-        if set_logged(fw, mode, label, capacity) {
+        if self.write(fw, mode, label, capacity) {
+            if self.state != State::Starting {
+                self.events.push(Event::BypassChanged { enabled: bypass });
+            }
             self.state = state;
         }
     }
@@ -93,7 +124,7 @@ impl Limiter {
         let capacity = reading.capacity;
         let bypassed = self.state == State::Bypassed;
         if bypass && bypassed {
-            reassert(fw, Mode::Auto);
+            self.reassert(fw, Mode::Auto);
             return;
         }
         if bypass || bypassed || self.state == State::Starting {
@@ -103,29 +134,31 @@ impl Limiter {
         let Band { stop, start, run_mode } = self.band;
         match self.state {
             State::Charging if capacity >= stop => {
-                if set_logged(fw, run_mode, "limit", capacity) {
+                if self.write(fw, run_mode, "limit", capacity) {
                     self.state = State::Limiting;
+                    self.events.push(Event::LimitReached { capacity });
                 }
             }
-            State::Charging if capacity <= start => reassert(fw, Mode::Auto),
+            State::Charging if capacity <= start => self.reassert(fw, Mode::Auto),
             State::Limiting if capacity <= start => {
-                if set_logged(fw, Mode::Auto, "release", capacity) {
+                if self.write(fw, Mode::Auto, "release", capacity) {
                     self.state = State::Charging;
+                    self.events.push(Event::ChargingResumed { capacity });
                 }
             }
-            State::Limiting if capacity >= stop => reassert(fw, run_mode),
+            State::Limiting if capacity >= stop => self.reassert(fw, run_mode),
             State::Starting | State::Charging | State::Limiting | State::Bypassed => {}
         }
     }
 
     /// Ends the limiter with the mode `policy` picks for `exit`; returns
     /// that mode, or None if the mode was kept.
-    pub fn finish(self, exit: Exit, policy: &ExitPolicy, capacity: u8, fw: &mut impl ChargeControl) -> Option<Mode> {
+    pub fn finish(mut self, exit: Exit, policy: &ExitPolicy, capacity: u8, fw: &mut impl ChargeControl) -> Option<Mode> {
         let label = exit.label();
         let mode = policy.mode(exit, capacity);
         match mode {
             Some(mode) => {
-                set_logged(fw, mode, label, capacity);
+                self.write(fw, mode, label, capacity);
             }
             None => println!("{label}: cap={capacity}% -> mode kept"),
         }

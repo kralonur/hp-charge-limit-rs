@@ -12,6 +12,7 @@ pub mod cli;
 mod bypass;
 mod daemon;
 mod diagnose;
+mod events;
 mod firmware;
 mod offstate;
 mod paths;

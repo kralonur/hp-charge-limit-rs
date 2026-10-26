@@ -3,7 +3,7 @@
 
 use crate::daemon::StopAction;
 use crate::firmware::Mode;
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
 
 const MAX_PERCENT: i64 = 100;
 const DEFAULT_STOP: u8 = 50;
@@ -75,4 +75,7 @@ pub struct DaemonOpts {
     /// Mode set when only the service is stopped (systemctl stop), not the PC
     #[arg(long, env = "HP_CHARGE_LIMIT_RS_STOP_MODE", value_enum, default_value_t = StopAction::Auto)]
     pub stop_mode: StopAction,
+    /// Broadcast D-Bus signals for desktop notifications; false never touches the bus
+    #[arg(long, env = "HP_CHARGE_LIMIT_RS_NOTIFY", default_value_t = true, action = ArgAction::Set)]
+    pub notify: bool,
 }
