@@ -128,6 +128,7 @@ prove charge blocking.
 | Victus 15-fb2xxx (15-fb2111AX) | 8C2F | F.05 | Windows | works | not tested |
 | Victus 15-fb3xxx | (not reported) | (not reported) | Windows | works | slow charge (rate not reported) |
 | Victus 15-fb3xxx | 8DD0 | F.15 | Pop!_OS 24.04 | works | not tested |
+| Victus 15-fb3xxx | 8E5F | F.15 | Windows 11 | works | slow charge: +709 mWh in 18 min off (about 2.36 W), 80% → 81%; +185 mWh in 5 min while running (about 2.22 W) ([#7](https://github.com/kralonur/hp-charge-limit-rs/issues/7)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Windows 11 | works | +230 mWh in 4 min off; longer test pending; hold adds +500 mWh in 10 min while running ([#3](https://github.com/kralonur/hp-charge-limit-rs/issues/3)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Linux | works | off test not reported; hold adds +230 mWh in 5 min while running (about 2.76 W) |
 
