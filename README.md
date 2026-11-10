@@ -117,17 +117,19 @@ prove charge blocking.
 | model | board | BIOS | OS | inhibit (running) | hold (off) |
 |---|---|---|---|---|---|
 | Victus 16-r1xxx | 8C99 | F.16 | Linux | works | works (blocks charging) |
+| Victus 16-r0xxx | 8BC2 | F.30 | Arch Linux | works | off behavior unverified; hold adds +240 mWh in 5 min while running (about 2.88 W) |
 | Victus 16-e0xxx | 88ED | F.27 | Windows 10 | works | works (blocks charging) |
 | Victus 16-e1xxx | 8A22 | F.28 | Windows | works | slow charge: about 3.5 W, 80% → 87% in 50 min off |
 | Victus 15-fb0xxx | 8A3D | F.26 | Windows 11 | works | slow charge: about 1.7 W, 80% → 81% in 30 min off, 80% → 100% overnight |
 | Victus 15-fa1xxx | 8C2D | F.18 | Windows 11 | works | slow charge: about 2.34 W while running; no charge overnight in hibernate reported (shutdown test not reported) |
-| Victus 15-fa1xxx | 8BB1 | F.23 | Linux (direct ACPI test) | works: +0 mWh in 1 min, 0 W ([#4](https://github.com/kralonur/hp-charge-limit-rs/issues/4)) | not tested |
+| Victus 15-fa1xxx | 8BB1 | F.23 | Linux (direct ACPI test) | works | not tested |
 | Victus 15-fa0xxx | 8A4F | F.34 | Windows 11 | works | slow charge: about 2.4 W while running (off test not reported) |
 | Victus 15-fa2xxx | 8DCD | F.07 | Windows 11 | works | not tested |
 | Victus 15-fb2xxx (15-fb2111AX) | 8C2F | F.05 | Windows | works | not tested |
 | Victus 15-fb3xxx | (not reported) | (not reported) | Windows | works | slow charge (rate not reported) |
-| HP Laptop 15s-du4xxx | 89A1 | F.69 | Windows 11 | reported working, occasional small energy increases | +230 mWh in 4 min off; longer test pending; hold adds +500 mWh in 10 min while running ([#3](https://github.com/kralonur/hp-charge-limit-rs/issues/3)) |
-| HP Laptop 15s-du4xxx | 89A1 | F.69 | Linux | works: +0 mWh in 5 min | off test not reported; hold adds +230 mWh in 5 min while running (about 2.76 W) |
+| Victus 15-fb3xxx | 8DD0 | F.15 | Pop!_OS 24.04 | works | not tested |
+| HP Laptop 15s-du4xxx | 89A1 | F.69 | Windows 11 | works | +230 mWh in 4 min off; longer test pending; hold adds +500 mWh in 10 min while running ([#3](https://github.com/kralonur/hp-charge-limit-rs/issues/3)) |
+| HP Laptop 15s-du4xxx | 89A1 | F.69 | Linux | works | off test not reported; hold adds +230 mWh in 5 min while running (about 2.76 W) |
 
 Your model is missing or behaves differently? Please
 [open an issue](https://github.com/kralonur/hp-charge-limit-rs/issues)
