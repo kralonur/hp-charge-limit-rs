@@ -24,13 +24,18 @@ compatibility before using it; unsupported firmware calls can be unsafe
 | mode | SBCC | while running | survives shutdown |
 |---|---|---|---|
 | `auto` | 0x0000 | charges | — |
-| `inhibit` | 0x0500 (SBIS) | no charge, white LED, "Not charging" | no, EC clears it |
+| `inhibit` | 0x0500 (SBIS) | no charge, white LED, "Not charging" | usually no, EC clears it; on board 8BCD it kept blocking ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)) |
 | `hold` | 0x0300 (SBTC) | no charge or slow charge, depending on the board; LED/status still say charging | yes, but on some boards it only slows charging |
 
 Only these three are ever written (never discharge 0x0200 or ship mode 0x0600/0x0700).
 Inhibit (the limit while running) works on the confirmed models, but not
 every reported board/OS combination; hold (the limit while off) also depends
 on the board: see [Tested models](#tested-models).
+
+**On some boards hold does not block charging, it only slows it** (about
+2–3 W). If yours is one of them, try `--off-mode inhibit`: on at least one
+board (8BCD) inhibit kept blocking charging while off, 80% → 79% over
+883 min off ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)).
 
 ## Contents
 
@@ -84,9 +89,10 @@ risk is small:
   running, [`bypass on`](#temporary-full-charge-bypass) pauses its limits and
   allows normal charging on the next AC-powered poll. `set auto` is only a
   one-time firmware change: a running daemon can override it. Stopping or
-  uninstalling the service sets auto by default. Inhibit ends by itself at
-  shutdown. Hold is the only mode
-  that outlasts a shutdown, until `set auto` or the service's next start.
+  uninstalling the service sets auto by default. Inhibit usually ends by
+  itself at shutdown (on board 8BCD it stayed, see
+  [#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)). Hold
+  outlasts a shutdown, until `set auto` or the service's next start.
   In hold the LED and battery status may say charging; that is only
   cosmetic. On some boards hold still lets a slow charge through (about
   2 W), so it limits less, but it never charges faster than normal.
@@ -133,6 +139,7 @@ prove charge blocking.
 | Victus 15-fb3xxx | (not reported) | (not reported) | Windows | works | slow charge (rate not reported) |
 | Victus 15-fb3xxx | 8DD0 | F.15 | Pop!_OS 24.04 | works | not tested |
 | Victus 15-fb3xxx | 8E5F | F.15 | Windows 11 | works | slow charge: +709 mWh in 18 min off (about 2.36 W), 80% → 81%; +185 mWh in 5 min while running (about 2.22 W) ([#7](https://github.com/kralonur/hp-charge-limit-rs/issues/7)) |
+| OMEN 16-xd0xxx | 8BCD | F.32 | Windows 11 | works | slow charge; use `--off-mode inhibit` (blocks charging) ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Windows 11 | works | +230 mWh in 4 min off; longer test pending; hold adds +500 mWh in 10 min while running ([#3](https://github.com/kralonur/hp-charge-limit-rs/issues/3)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Linux | works | off test not reported; hold adds +230 mWh in 5 min while running (about 2.76 W) |
 
@@ -371,7 +378,7 @@ not override the test commands:
 - **While the laptop is running: inhibit.** The charge LED turns **white**
   and the battery shows as not charging. This is how you see the limit
   working.
-- **While the laptop is off: hold.** Inhibit ends at shutdown, so the
+- **While the laptop is off: hold.** Inhibit usually ends at shutdown, so the
   service switches to hold just before. In hold the LED stays **orange**,
   as if charging, and Windows may say charging too. Don't go by the LED
   here: `status --watch 300` and the `last off` line after the next start
@@ -382,7 +389,9 @@ not override the test commands:
 If a write step fails or anything looks wrong, run `set auto` with the
 service and any foreground daemon stopped: it restores normal charging.
 If you would rather not try hold, skip those two steps and install with
-`--off-mode inhibit` (or `keep`).
+`--off-mode inhibit` (or `keep`). If hold only slows charging on your
+board, also try `--off-mode inhibit`: on board 8BCD inhibit kept
+blocking while off ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)).
 
 **Run it as a service** (starts at boot, takes the same options as `daemon`):
 
@@ -768,8 +777,10 @@ journal logs `shutdown: cap=..% -> hold`, and the next boot reports
 `off N min in hold` with no charge gained, over offs of up to 14 hours.
 Testers on other boards found hold only slowing charging (about 2 W), so
 this is not a guarantee for other machines or firmware versions; see
-[Tested models](#tested-models). To check your own laptop, look in the
-journal for those two lines.
+[Tested models](#tested-models). On board 8BCD, inhibit instead kept
+blocking charging while off
+([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)). To check your own laptop, look in
+the journal for those two lines.
 
 Still unverified:
 
