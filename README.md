@@ -3,18 +3,21 @@
 Battery charge limiter using the firmware's ACPI WMI method
 `\_SB.WMID.SBCC`: through `acpi_call` on Linux, and through HP's BIOS WMI
 interface on Windows (see [Tested models](#tested-models)). Linux prefers
-`GBCO`/`SBCO` when declared, otherwise using the `GBCC`/`SBCC` buffer
+`GBCO`/`SBCO` when declared, otherwise using the `GBCC`/`SBCC`
 interface. Before any charge-control call, ACPICA's `iasl` inspects the
 DSDT and SSDTs (including dynamically loaded tables) offline to discover
 method signatures. Supported pairs are `GBCO(0)`/`SBCO(1)` (packed integer),
-`GBCO(0)`/`SBCO(4)` (four byte arguments), and `GBCC(0)`/`SBCC(1)` (buffer).
-Unknown, incomplete, or ambiguous signatures and tool failures are rejected;
+`GBCO(0)`/`SBCO(4)` (four byte arguments), and `GBCC(0)`/`SBCC(1)` (buffer
+or integer). For SBCC, discovery also inspects the method body: a DWORD
+extracted from `Arg0` at offset `0x10` selects the buffer format; direct
+`Arg0 & 0xFF` / `Arg0 & 0xFF00` checks select the integer format.
+Unknown, incomplete, or ambiguous signatures, argument uses, and tool failures are rejected;
 there is no fallback to guessed writes. Argument counts do not prove that
 unknown firmware implements the same semantics.
 
 I tried this on an HP Victus 16-r1000 laptop. It may work on your PC too,
 but compatibility is not guaranteed: your firmware must expose the same
-methods and buffer layout. There is no model or board check, so verify
+methods and calling convention. There is no model or board check, so verify
 compatibility before using it; unsupported firmware calls can be unsafe
 (see [Is it safe for my laptop?](#is-it-safe-for-my-laptop)).
 
@@ -116,6 +119,7 @@ prove charge blocking.
 
 | model | board | BIOS | OS | inhibit (running) | hold (off) |
 |---|---|---|---|---|---|
+| OmniBook 3 14-ha0xxx | 8E2D | F.06 | NixOS | works | works (blocks charging) |
 | Victus 16-r1xxx | 8C99 | F.16 | Linux | works | works (blocks charging) |
 | Victus 16-r0xxx | 8BC2 | F.30 | Arch Linux | works | off behavior unverified; hold adds +240 mWh in 5 min while running (about 2.88 W) |
 | Victus 16-e0xxx | 88ED | F.27 | Windows 10 | works | works (blocks charging) |
@@ -336,8 +340,10 @@ Windows reaches SBCC without any driver. The firmware's WMI dispatcher
 (`\_SB.WMID.WHCM`) is exposed to Windows as the `root\wmi` class
 `hpqBIntM`, the same interface OMEN Gaming Hub, OmenMon and similar tools
 use. BIOS command 1 (read) / 2 (write) with command type `0x2B` lands in
-GBCC / SBCC with the same buffer the Linux build passes through
-`acpi_call`. It is also the slot mainline Linux `hp-wmi` drives for
+GBCC / SBCC. The WMI request remains a buffer; on integer-based SBCC
+firmware, the dispatcher extracts the mode before calling SBCC. Linux
+instead calls the discovered method directly through `acpi_call` with its
+buffer or integer argument. It is also the slot mainline Linux `hp-wmi` drives for
 `charge_behaviour` on HP Spectre boards 8C15/8C17 (there named GBCO/SBCO),
 with the same auto/inhibit values. Run everything from an
 **administrator** terminal.
