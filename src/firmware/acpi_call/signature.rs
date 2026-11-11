@@ -66,7 +66,10 @@ fn collect_tables(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(tables)
 }
 
-fn select([gbco, sbco, gbcc, sbcc]: [Option<u8>; 4]) -> Result<Interface> {
+fn select(
+    [gbco, sbco, gbcc, sbcc]: [Option<u8>; 4],
+    sbcc_source: Option<&str>,
+) -> Result<Interface> {
     if gbco.is_some() || sbco.is_some() {
         return match (gbco, sbco) {
             (Some(0), Some(1)) => Ok(Interface::SbcoPacked),
@@ -78,7 +81,107 @@ fn select([gbco, sbco, gbcc, sbcc]: [Option<u8>; 4]) -> Result<Interface> {
         gbcc == Some(0) && sbcc == Some(1),
         "unsupported/incomplete GBCC/SBCC signature: {gbcc:?}/{sbcc:?}"
     );
-    Ok(Interface::Sbcc)
+    sbcc_interface(sbcc_source.context("missing SBCC method body")?)
+}
+
+// Tokenize iasl's generated ASL, keeping strings opaque and ignoring comments.
+// This prevents braces or apparent argument uses inside either from matching.
+fn tokens(source: &str) -> Result<Vec<&str>> {
+    let mut tokens = Vec::new();
+    let mut rest = source;
+    while !rest.is_empty() {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            break;
+        }
+        if rest.starts_with("//") {
+            rest = rest.find('\n').map_or("", |end| &rest[end..]);
+            continue;
+        }
+        if rest.starts_with("/*") {
+            let end = rest.find("*/").context("unterminated ASL comment")?;
+            rest = &rest[end + 2..];
+            continue;
+        }
+        let end = if rest.starts_with('"') {
+            let mut escaped = false;
+            let mut end = None;
+            for (index, ch) in rest.char_indices().skip(1) {
+                if ch == '"' && !escaped {
+                    end = Some(index + 1);
+                    break;
+                }
+                escaped = ch == '\\' && !escaped;
+            }
+            end.context("unterminated ASL string")?
+        } else {
+            let end = rest
+                .find(|ch: char| {
+                    !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '.' | '\\' | '^'))
+                })
+                .unwrap_or(rest.len());
+            if end == 0 {
+                rest.chars().next().unwrap().len_utf8()
+            } else {
+                end
+            }
+        };
+        tokens.push(&rest[..end]);
+        rest = &rest[end..];
+    }
+    Ok(tokens)
+}
+
+fn sbcc_interface(source: &str) -> Result<Interface> {
+    let tokens = tokens(source)?;
+    let mut bodies = Vec::new();
+    for (index, window) in tokens.windows(4).enumerate() {
+        if window[0] != "Method" || window[1] != "(" || window[3] != "," {
+            continue;
+        }
+        let name = window[2]
+            .rsplit('.')
+            .next()
+            .unwrap()
+            .trim_start_matches(['\\', '^']);
+        if name != "SBCC" {
+            continue;
+        }
+        let start = index
+            + tokens[index..]
+                .iter()
+                .position(|&t| t == "{")
+                .context("missing SBCC body")?;
+        let mut depth = 0;
+        let mut end = None;
+        for (offset, token) in tokens[start..].iter().enumerate() {
+            match *token {
+                "{" => depth += 1,
+                "}" => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = Some(start + offset);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        bodies.push(&tokens[start + 1..end.context("unterminated SBCC body")?]);
+    }
+    ensure!(bodies.len() == 1, "missing/ambiguous SBCC method body");
+    let body = bodies[0];
+    let uses = body.iter().filter(|&&t| t == "Arg0").count();
+    let buffer = body
+        .windows(6)
+        .any(|w| w == ["CreateDWordField", "(", "Arg0", ",", "0x10", ","]);
+    let low = body.windows(3).any(|w| w == ["Arg0", "&", "0xFF"]);
+    let high = body.windows(3).any(|w| w == ["Arg0", "&", "0xFF00"]);
+    match (buffer, low, high, uses) {
+        (true, false, false, 1) => Ok(Interface::SbccBuffer),
+        (false, true, true, 2) => Ok(Interface::SbccInteger),
+        _ => bail!("unsupported/ambiguous SBCC argument convention"),
+    }
 }
 
 fn declaration(line: &str) -> Option<(&str, u8)> {
@@ -93,7 +196,8 @@ fn declaration(line: &str) -> Option<(&str, u8)> {
     (arguments <= 7).then_some((name, arguments))
 }
 
-fn record_methods(offsets: &str, aml: &[u8], methods: &mut [Option<u8>; 4]) -> Result<()> {
+fn record_methods(offsets: &str, aml: &[u8], methods: &mut [Option<u8>; 4]) -> Result<bool> {
+    let mut has_sbcc = false;
     for line in offsets.lines() {
         let Some((path, fields)) = line
             .trim()
@@ -137,8 +241,9 @@ fn record_methods(offsets: &str, aml: &[u8], methods: &mut [Option<u8>; 4]) -> R
             "duplicate method: {}",
             TARGETS[index]
         );
+        has_sbcc |= index == 3;
     }
-    Ok(())
+    Ok(has_sbcc)
 }
 
 fn run(iasl: &Path, args: &[&str], directory: &Path, deadline: Instant) -> Result<()> {
@@ -184,6 +289,7 @@ fn discover(tables: &[PathBuf], iasl: &Path) -> Result<Interface> {
     let directory = output.path();
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut methods = [None; 4];
+    let mut sbcc_source = None;
     for (index, table) in tables.iter().enumerate() {
         let data = fs::read(table).with_context(|| format!("{} (root needed)", table.display()))?;
         ensure!(
@@ -223,7 +329,85 @@ fn discover(tables: &[PathBuf], iasl: &Path) -> Result<Interface> {
         run(iasl, &["-so", "-p", &prefix, &dsl], directory, deadline)?;
         let offsets = fs::read_to_string(directory.join(format!("{prefix}.offset.h")))?;
         let aml = fs::read(directory.join(format!("{prefix}.aml")))?;
-        record_methods(&offsets, &aml, &mut methods)?;
+        if record_methods(&offsets, &aml, &mut methods)? {
+            sbcc_source = Some(source);
+        }
     }
-    select(methods)
+    select(methods, sbcc_source.as_deref())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INTEGER: &str = include_str!("fixtures/sbcc-integer.asl");
+    const BUFFER: &str = include_str!("fixtures/sbcc-buffer.asl");
+
+    #[test]
+    fn distinguishes_sbcc_argument_types() {
+        assert_eq!(sbcc_interface(INTEGER).unwrap(), Interface::SbccInteger);
+        assert_eq!(sbcc_interface(BUFFER).unwrap(), Interface::SbccBuffer);
+        for source in [INTEGER, BUFFER] {
+            assert_eq!(
+                select([None, None, Some(0), Some(1)], Some(source)).unwrap(),
+                sbcc_interface(source).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_or_ambiguous_sbcc() {
+        for source in [
+            "Method (SBCC, 1) { Return (Arg0) }".to_string(),
+            BUFFER.replace("0x10", "0x14"),
+            INTEGER.replace("0xFF00", "0x0F00"),
+            BUFFER.replace("Switch", "Store (Arg0, Local0) Switch"),
+            format!("{BUFFER}\n{INTEGER}"),
+            BUFFER.replace(
+                "CreateDWordField (Arg0, 0x10, DBUF)",
+                "/* CreateDWordField (Arg0, 0x10, DBUF) */",
+            ),
+            "Method (SBCC, 1) { Store (\"Arg0 & 0xFF Arg0 & 0xFF00 }\", Debug) }".to_string(),
+        ] {
+            assert!(sbcc_interface(&source).is_err(), "accepted: {source}");
+        }
+        assert!(select([None, None, Some(0), Some(1)], None).is_err());
+        assert!(select([None, None, Some(1), Some(1)], Some(INTEGER)).is_err());
+    }
+
+    #[test]
+    fn preserves_sbco_selection() {
+        assert_eq!(
+            select([Some(0), Some(1), None, None], None).unwrap(),
+            Interface::SbcoPacked
+        );
+        assert_eq!(
+            select([Some(0), Some(4), None, None], None).unwrap(),
+            Interface::SbcoBytes
+        );
+        assert!(select([Some(0), None, Some(0), Some(1)], Some(INTEGER)).is_err());
+    }
+
+    #[test]
+    #[ignore = "requires ACPICA iasl"]
+    fn discovers_compiled_fixtures_offline() {
+        for (source, expected) in [
+            (INTEGER, Interface::SbccInteger),
+            (BUFFER, Interface::SbccBuffer),
+        ] {
+            let directory = tempfile::tempdir().unwrap();
+            fs::write(directory.path().join("fixture.asl"), source).unwrap();
+            run(
+                Path::new("iasl"),
+                &["-tc", "fixture.asl"],
+                directory.path(),
+                Instant::now() + Duration::from_secs(60),
+            )
+            .unwrap();
+            assert_eq!(
+                discover(&[directory.path().join("fixture.aml")], Path::new("iasl")).unwrap(),
+                expected
+            );
+        }
+    }
 }

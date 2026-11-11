@@ -16,7 +16,8 @@ const GBCO: &str = r"\_SB.WMID.GBCO";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Interface {
-    Sbcc,
+    SbccBuffer,
+    SbccInteger,
     SbcoPacked,
     SbcoBytes,
 }
@@ -24,14 +25,15 @@ enum Interface {
 impl Interface {
     fn getter(self) -> &'static str {
         match self {
-            Self::Sbcc => GBCC,
+            Self::SbccBuffer | Self::SbccInteger => GBCC,
             Self::SbcoPacked | Self::SbcoBytes => GBCO,
         }
     }
 
     fn command(self, mode: Mode) -> String {
         match self {
-            Self::Sbcc => sbcc_command(mode),
+            Self::SbccBuffer => sbcc_command(mode),
+            Self::SbccInteger => format!("{SBCC} {:#x}", mode as u32),
             Self::SbcoPacked => format!("{SBCO} {:#x}", mode as u32),
             Self::SbcoBytes => {
                 let [a, b, c, d] = mode_data(mode);
@@ -129,7 +131,7 @@ fn check_write_reply(interface: Interface, cmd: &str, reply: &str) -> Result<()>
             "{cmd}: missing status buffer: {reply}"
         ),
         // SBCC(1) on 8C99 returns [0, 0], without a buffer.
-        Interface::Sbcc => {}
+        Interface::SbccBuffer | Interface::SbccInteger => {}
     }
     if let Some(data) = parsed.data {
         let status = u32::from_le_bytes(data);
@@ -170,4 +172,55 @@ fn set_with(
 
 pub(super) fn set(mode: Mode) -> Result<()> {
     set_with(signature::interface()?, mode, acpi_call)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sbcc_commands_use_the_discovered_argument_type() {
+        for mode in [Mode::Auto, Mode::Hold, Mode::Inhibit] {
+            assert_eq!(
+                Interface::SbccInteger.command(mode),
+                format!("{SBCC} {:#x}", mode as u32)
+            );
+            let mut buffer = [0u8; 20];
+            buffer[16..].copy_from_slice(&(mode as u32).to_le_bytes());
+            let hex: String = buffer.iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(
+                Interface::SbccBuffer.command(mode),
+                format!("{SBCC} b{hex}")
+            );
+        }
+    }
+
+    #[test]
+    fn sbcc_checks_getter_before_writing() {
+        for interface in [Interface::SbccInteger, Interface::SbccBuffer] {
+            let mut calls = Vec::new();
+            set_with(interface, Mode::Inhibit, |cmd| {
+                calls.push(cmd.to_string());
+                Ok(if cmd == GBCC {
+                    "[0x0, 0x4, {0x0, 0x0, 0x0, 0x0}]"
+                } else {
+                    "[0x0, 0x0]"
+                }
+                .to_string())
+            })
+            .unwrap();
+            assert_eq!(calls, [GBCC.to_string(), interface.command(Mode::Inhibit)]);
+
+            let mut calls = Vec::new();
+            assert!(
+                set_with(interface, Mode::Inhibit, |cmd| {
+                    calls.push(cmd.to_string());
+                    Ok("Error: AE_ERROR".to_string())
+                })
+                .is_err()
+            );
+            assert_eq!(calls, [GBCC]);
+            assert!(check_write_reply(interface, "SBCC", "[0x1, 0x0]").is_err());
+        }
+    }
 }
