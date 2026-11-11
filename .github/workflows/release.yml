@@ -39,18 +39,19 @@ jobs:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      - name: Install musl linker
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes musl-tools
-
+      # Rust ships musl's libc and startup files for these targets, and no
+      # dependency compiles C, so the runner's own linker is enough.
       - name: Build and check binary
         env:
           TARGET: ${{ matrix.target }}
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
         run: |
           cargo build --locked --release --target "$TARGET"
+          # static: no program interpreter and no shared libraries
+          if readelf -lW "target/$TARGET/release/hp-charge-limit-rs" | grep 'program interpreter' ||
+             readelf -dW "target/$TARGET/release/hp-charge-limit-rs" | grep NEEDED; then
+            echo 'binary is not statically linked' >&2
+            exit 1
+          fi
           "target/$TARGET/release/hp-charge-limit-rs" --version
           "target/$TARGET/release/hp-charge-limit-rs" --help
 
