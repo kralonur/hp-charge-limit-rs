@@ -129,8 +129,10 @@ prove charge blocking.
 | Victus 16-r1xxx | 8C99 | F.16 | Linux | works | works (blocks charging) |
 | Victus 16-r0xxx | 8BC2 | F.30 | Arch Linux | works | off behavior unverified; hold adds +240 mWh in 5 min while running (about 2.88 W) |
 | Victus 16-e0xxx | 88ED | F.27 | Windows 10 | works | works (blocks charging) |
+| Victus 16-e0xxx | 88EB | F.21 | Windows 11 | works | +0 mWh in 5 min while running; historical off report: 78% → 76%, -724 mWh in 269 min (not a controlled shutdown test) ([#9](https://github.com/kralonur/hp-charge-limit-rs/issues/9)) |
 | Victus 16-e1xxx | 8A22 | F.28 | Windows | works | slow charge: about 3.5 W, 80% → 87% in 50 min off |
 | Victus 15-fb0xxx | 8A3D | F.26 | Windows 11 | works | slow charge: about 1.7 W, 80% → 81% in 30 min off, 80% → 100% overnight |
+| Victus 15-fb0xxx (15-fb0051ax) | 8A3C | F.26 | Windows | works | slow charge: +185 mWh in 5 min while running (about 2.22 W); off slow charge reported, `--off-mode inhibit` reportedly blocks charging until AC unplug/replug; replacement battery with calibration issues ([#10](https://github.com/kralonur/hp-charge-limit-rs/issues/10)) |
 | Victus 15-fa1xxx | 8C2D | F.18 | Windows 11 | works | slow charge: about 2.34 W while running; no charge overnight in hibernate reported (shutdown test not reported) |
 | Victus 15-fa1xxx | 8BB1 | F.23 | Linux (direct ACPI test) | works | not tested |
 | Victus 15-fa0xxx | 8A4F | F.34 | Windows 11 | works | slow charge: about 2.4 W while running (off test not reported) |
@@ -142,6 +144,11 @@ prove charge blocking.
 | OMEN 16-xd0xxx | 8BCD | F.32 | Windows 11 | works | slow charge; use `--off-mode inhibit` (blocks charging) ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Windows 11 | works | +230 mWh in 4 min off; longer test pending; hold adds +500 mWh in 10 min while running ([#3](https://github.com/kralonur/hp-charge-limit-rs/issues/3)) |
 | HP Laptop 15s-du4xxx | 89A1 | F.69 | Linux | works | off test not reported; hold adds +230 mWh in 5 min while running (about 2.76 W) |
+
+On board 8A3C, AC unplug/replug while off reportedly resets charging to auto
+with `--off-mode hold`, `inhibit`, or `keep`. The daemon reapplies the limit
+when Windows starts; it cannot enforce a limit while the machine is off
+([#10](https://github.com/kralonur/hp-charge-limit-rs/issues/10)).
 
 Your model is missing or behaves differently? Please
 [open an issue](https://github.com/kralonur/hp-charge-limit-rs/issues)
