@@ -37,14 +37,15 @@ function Assert-True([bool]$Condition, [string]$Message) {
 }
 
 function Run-Setup([string]$Executable, [string]$Label, [switch]$ShouldFail) {
-    $log = Join-Path $env:RUNNER_TEMP "hp-charge-$Label.log"
-    $process = Start-Process -FilePath $Executable -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$log`"") -Wait -PassThru
+    $script:setupLog = Join-Path $env:RUNNER_TEMP "hp-charge-$Label.log"
+    Write-Host "Running $Label"
+    # Don't let the uninstaller hold its own installation directory open.
+    $process = Start-Process -FilePath $Executable -WorkingDirectory $env:RUNNER_TEMP -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=`"$script:setupLog`"") -Wait -PassThru
     if ($ShouldFail) {
         Assert-True ($process.ExitCode -ne 0) "$Label unexpectedly succeeded."
         return
     }
     if ($process.ExitCode -ne 0) {
-        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log | Write-Host }
         throw "$Label failed with exit code $($process.ExitCode)."
     }
 }
@@ -89,6 +90,7 @@ function Service-Snapshot {
 }
 
 $serviceCreated = $false
+$setupLog = $null
 try {
     # Refuse an unrecognized directory without changing its contents.
     New-Item -Path $app -ItemType Directory -Force | Out-Null
@@ -137,7 +139,7 @@ try {
     # An autorun command belonging to a different installation must survive.
     $foreignRun = '"C:\another-install\hp-charge-limit-tray.exe"'
     New-ItemProperty -LiteralPath $runKey -Name $runName -Value $foreignRun -PropertyType String -Force | Out-Null
-    New-Item -Path $app -ItemType Directory -Force | Out-Null
+    New-Item -Path $app, $shortcuts -ItemType Directory -Force | Out-Null
     Set-Content -LiteralPath $marker -Value 'hp-charge-limit-desktop' -Encoding ASCII
     Run-Setup $installerPath 'legacy-adoption-with-existing-service'
     Assert-Installed
@@ -147,6 +149,9 @@ try {
     Assert-True ((Get-TrayStartup) -eq $foreignRun) 'Uninstall deleted a foreign startup entry.'
     Assert-True ((Service-Snapshot) -eq $before) 'Installation lifecycle changed the existing service.'
     Write-Host 'Unsigned installer smoke tests passed; the service and its custom arguments were preserved.'
+} catch {
+    if ($setupLog -and (Test-Path -LiteralPath $setupLog)) { Get-Content -LiteralPath $setupLog | Write-Host }
+    throw
 } finally {
     if ($serviceCreated) { & $cli service uninstall }
     if (Test-Path -LiteralPath $uninstaller) { Run-Setup $uninstaller 'cleanup' }
