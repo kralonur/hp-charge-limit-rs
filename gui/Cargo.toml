@@ -1,0 +1,17 @@
+[package]
+name = "hp-charge-limit-gui"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+# Keep GPU/window-system dependencies out of the CLI and its release builds.
+[workspace]
+
+[dependencies]
+async-process = "2.5"
+gpui-kit = "=0.9.0"
+hp-charge-limit-desktop = { path = "../desktop" }
+serde_json = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+futures-lite = "2.6"
