@@ -53,6 +53,11 @@ Name: "{group}\HP Charge Limit Tray"; Filename: "{app}\hp-charge-limit-tray.exe"
 [Run]
 Filename: "{app}\hp-charge-limit-gui.exe"; Description: "Launch HP Charge Limit"; Flags: postinstall nowait skipifsilent
 
+[UninstallDelete]
+; Legacy script installs created these directories before Setup adopted them.
+Type: dirifempty; Name: "{app}"
+Type: dirifempty; Name: "{group}"
+
 [Code]
 function LegacyMarkerIsOurs(): Boolean;
 var
