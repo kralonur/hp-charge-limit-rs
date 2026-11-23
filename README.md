@@ -1,5 +1,7 @@
 # hp-charge-limit-rs
 
+Get started: [CLI only](#cli-only-or-add-the-desktop-later) · [Desktop app](#desktop-quick-start)
+
 Battery charge limiter using the firmware's ACPI WMI method
 `\_SB.WMID.SBCC`: through `acpi_call` on Linux, and through HP's BIOS WMI
 interface on Windows (see [Tested models](#tested-models)). Linux prefers
@@ -37,8 +39,150 @@ on the board: see [Tested models](#tested-models).
 board (8BCD) inhibit kept blocking charging while off, 80% → 79% over
 883 min off ([#8](https://github.com/kralonur/hp-charge-limit-rs/issues/8)).
 
+## CLI only (or add the desktop later)
+
+- **Linux:** Use the [AUR package](#arch-linux-aur) on Arch, or follow the
+  [manual CLI install](#linux-manual-installation) for a prebuilt `musl`
+  archive. You don't need the desktop bundle or GitHub Actions.
+- **Windows:** Expand **Assets** on [GitHub Releases](https://github.com/kralonur/hp-charge-limit-rs/releases)
+  and download `hp-charge-limit-rs-v<version>-x86_64-pc-windows-msvc.zip`
+  (not the desktop ZIP or setup file). There is no installer for this option:
+  extract the ZIP, open PowerShell in the extracted folder, and try
+  `.\hp-charge-limit-rs.exe --help`. Follow the [Windows CLI instructions](#windows)
+  to test it and optionally enable the background service.
+
+**Want the dashboard later?** Follow the [desktop quick start](#desktop-quick-start).
+You don't need to uninstall the CLI, stop a running service, or re-enter your
+limits. The app bundles its own CLI without replacing the one you installed.
+It detects the existing background service and leaves its settings alone.
+If the service is stopped, click **Start existing service**. If you only ran
+`daemon` in a terminal, stop it with Ctrl+C before setting up the background
+service in the app. You can still use the CLI if you remove the desktop app
+later.
+
+## Desktop quick start
+
+Choose [Windows](#windows-desktop) or [Linux](#linux-desktop), then follow
+[Turn on charge limiting](#turn-on-charge-limiting). Both desktop downloads
+include the command-line tool (CLI); you don't need to install it separately.
+Installing the app alone does **not** start charge limiting.
+
+### Windows desktop
+
+1. Open [GitHub Releases](https://github.com/kralonur/hp-charge-limit-rs/releases)
+   and expand **Assets** on a release that includes the desktop app. Download
+   `hp-charge-limit-desktop-v<version>-x86_64-setup.exe`. Don't choose the
+   CLI ZIP or **Source code**. If the setup file isn't listed, that release
+   doesn't have a desktop installer.
+2. Open **Downloads**, double-click the setup file, and follow the prompts.
+   Do not use **Run as administrator**. The installer is unsigned, so Windows
+   may show an unknown-publisher or SmartScreen warning. Only use a download
+   from the official project page above.
+3. Leave **Launch HP Charge Limit** checked on the final screen and click
+   **Finish**. You can also open **HP Charge Limit** from the Start menu.
+   No terminal or extra driver is needed. Setup installs the tray shortcut
+   as well, but it doesn't start the tray or add it to login startup.
+
+### Linux desktop
+
+Linux has no click-through installer yet. The prebuilt desktop bundle is for
+64-bit Intel/AMD PCs (`x86_64`) with systemd. It's built on Ubuntu 26.04 and
+may not run on older distributions. If the app fails to open because a system
+library is too old, use the [CLI packages](#install) or
+[build the desktop app locally](#desktop-dashboard-and-tray).
+
+1. **Install the prerequisites.** Open Terminal and use the command for your
+   distribution. Linux needs `acpi_call` (the battery-control kernel module)
+   for your running kernel, `iasl` (included with ACPICA), and polkit with a
+   desktop password prompt.
+
+   On Arch with the standard `linux` kernel:
+
+   ```sh
+   sudo pacman -S acpica acpi_call polkit
+   ```
+
+   On Debian 13 or Ubuntu 24.04 with a distro-provided kernel:
+
+   ```sh
+   sudo apt update
+   sudo apt install acpica-tools "linux-headers-$(uname -r)" acpi-call-dkms pkexec
+   ```
+
+   On Ubuntu, `acpi-call-dkms` is in the **Universe** software repository.
+   For another distribution or kernel, check its documentation for the
+   matching `acpi_call` package and polkit setup. If installation fails, fix
+   that before continuing.
+2. **Download the app.** Sign in to GitHub and open the
+   [Desktop workflow](https://github.com/kralonur/hp-charge-limit-rs/actions/workflows/desktop.yml).
+   Open a successful run with a Linux build and, under **Artifacts**, download
+   **desktop-linux-x86_64-gnu**. This is a build download, not a file on the
+   Releases page. If there is no downloadable artifact, use a newer
+   successful run or [build locally](#desktop-dashboard-and-tray).
+3. **Extract and install it.** In your file manager, extract the downloaded
+   ZIP, then extract the `.tar.gz` inside it. Open the resulting folder that
+   contains `install.sh`. Right-click an empty area and choose **Open in
+   Terminal** (some file managers call it **Open Terminal Here**). Run:
+
+   ```sh
+   sh ./install.sh
+   ```
+
+   Don't add `sudo`: the app is installed for your user only. When the command
+   finishes, open **HP Charge Limit** from your applications menu.
+
+### Turn on charge limiting
+
+1. Open **Compatibility and verification guide** in the dashboard to check
+   [Tested models](#tested-models). If Linux shows **Load ACPI driver**, click
+   it and approve the password prompt. The button
+   loads the module you already installed; it can't download it for you.
+2. Click **Run read-only diagnostics** and approve the prompt. If the check
+   fails, don't continue. A pass means the app can read the firmware, not that
+   it can stop charging. To check that, plug in below 100% while the laptop is
+   charging. Under **Diagnostics & manual control**, select **Set Inhibit**,
+   then **Start check** under **Timed charging check**. If the battery keeps
+   gaining energy, leave the limiter off. Select **Set Auto** after the test
+   to restore normal charging. Charging while shut down is a separate check;
+   don't assume that it stops just because this test passes.
+3. Set **Resume at or below** and **Stop at or above** (for example, 75% and
+   80%). Check **I checked compatibility and agree to install and enable the
+   service**, click **Install and enable service**, then approve the system
+   prompt. The service starts now and on future boots.
+
+If you already have the service, the dashboard uses it without replacing it.
+Click **Start existing service** if it is stopped. Closing the app or tray
+doesn't stop the background limiter.
+
+**To remove it:** First choose **Service management → Remove service** if
+shown. For a Linux service installed separately, use its uninstall steps:
+[manual installation](#linux-manual-installation) or [Arch Linux](#arch-linux-aur).
+Then remove the app: on Windows, uninstall **HP Charge Limit Desktop** from
+**Settings → Apps**; on Linux, run `sh ./install.sh --uninstall` in the extracted
+folder. Removing just the app does not stop or remove the service.
+
+### Use the tray icon (optional)
+
+The CLI-only download doesn't include a tray icon. If you install the desktop
+app now or later, launch **HP Charge Limit Tray** to show the icon:
+
+- **Windows:** Find **HP Charge Limit Tray** in Start. Look for the icon near
+  the clock; it may be under the hidden-icons arrow (**^**).
+- **Linux:** Find **HP Charge Limit Tray** in your applications menu. KDE
+  Plasma supports it out of the box. On GNOME, enable an AppIndicator or
+  StatusNotifierItem extension to see it.
+
+Use the tray menu to **Open dashboard** or, when the limiter is running,
+**Charge to full** / **Resume limiting**. To make the tray appear every time
+*you sign in*, check **Start tray at login** in the tray menu or under
+**Preferences & help** in the dashboard. To show it right now, launch the
+tray shortcut. Closing the dashboard doesn't close the tray, and **Quit tray**
+doesn't stop the background limiter.
+
 ## Contents
 
+- [CLI only (or add the desktop later)](#cli-only-or-add-the-desktop-later)
+- [Desktop quick start](#desktop-quick-start)
 - [Is it safe for my laptop?](#is-it-safe-for-my-laptop)
 - [Why this repo?](#why-this-repo)
 - [Tested models](#tested-models)
@@ -50,6 +194,7 @@ board (8BCD) inhibit kept blocking charging while off, 80% → 79% over
 - [Use](#use)
   - [Setup diagnostics](#setup-diagnostics)
   - [Desktop dashboard and tray](#desktop-dashboard-and-tray)
+    - [Linux RAM usage](#linux-ram-usage)
   - [Desktop notifications](#desktop-notifications)
   - [Shell completion](#shell-completion)
   - [Temporary full-charge bypass](#temporary-full-charge-bypass)
@@ -187,7 +332,10 @@ the limitations described below.
 
 ## Install
 
-Requires Linux, systemd for the service, ACPICA's `iasl` executable in PATH,
+This section covers installing the command-line tool and service directly.
+For the desktop app, use the [desktop quick start](#desktop-quick-start).
+
+On Linux, the service requires systemd, ACPICA's `iasl` executable in PATH,
 and the `acpi_call` module built for your running kernel. Install ACPICA
 with `sudo pacman -S acpica` on Arch or `sudo apt install acpica-tools` on
 Debian/Ubuntu. Install the module using your distribution's packages;
@@ -361,8 +509,9 @@ firmware, the dispatcher extracts the mode before calling SBCC. Linux
 instead calls the discovered method directly through `acpi_call` with its
 buffer or integer argument. It is also the slot mainline Linux `hp-wmi` drives for
 `charge_behaviour` on HP Spectre boards 8C15/8C17 (there named GBCO/SBCO),
-with the same auto/inhibit values. Run everything from an
-**administrator** terminal.
+with the same auto/inhibit values. Run the CLI commands below from an
+**administrator** terminal. The [desktop installer](#windows-desktop) itself
+runs as a normal user.
 
 **Get it:** download the CLI-only `x86_64-pc-windows-msvc` `.zip` from GitHub
 Releases (or a manual workflow run's artifacts), or build from source with
@@ -373,12 +522,12 @@ installer are **unsigned**: Windows may show an unknown publisher or
 SmartScreen warning.
 
 Upgrading the desktop app does **not** update the protected
-service copy under `%ProgramFiles%\hp-charge-limit-rs`. To update that copy,
-inspect `sc.exe qc hp-charge-limit-rs` and repeat `service install` using the
-new CLI with your existing daemon options from an Administrator terminal;
-omitted options use defaults. Uninstalling the app leaves the service and its
-settings intact; remove the service separately with `service uninstall` when
-wanted. See [installer details](packaging/windows/).
+service copy under `%ProgramFiles%\hp-charge-limit-rs`. To update a standard
+service installation without resetting its settings, choose **Service management
+→ Update service from this app**, or run `service upgrade` with the new CLI
+from an Administrator terminal. Uninstalling the app leaves the service and its
+settings intact; remove the service separately in the dashboard or with
+`service uninstall`. See [installer details](packaging/windows/).
 
 **Test in this order** and stop at the first step that fails. If you already
 have the service or a foreground daemon running, stop it first so it does
@@ -578,19 +727,10 @@ installer; the Linux desktop bundle remains an Actions artifact:
 - `hp-charge-limit-desktop-v<version>-x86_64-unknown-linux-gnu.tar.gz`
 - `hp-charge-limit-desktop-v<version>-x86_64-pc-windows-msvc.zip`
 
-Extract the bundle and run its installer as your desktop user, **not with
-sudo**:
-
-```sh
-tar -xzf hp-charge-limit-desktop-*.tar.gz
-cd hp-charge-limit-desktop-*
-./install.sh
-```
-
-On Windows, prefer the unsigned `hp-charge-limit-desktop-v<version>-x86_64-setup.exe`
-installer, and uninstall it from Windows
-Settings, not `install.ps1`. Alternatively, the ZIP bundle
-still supports the script installer, in PowerShell:
+See the [Linux desktop](#linux-desktop) steps for downloading and installing
+its bundle. On Windows, prefer the [desktop setup program](#windows-desktop)
+and uninstall it from Windows Settings, not `install.ps1`. The Windows ZIP
+bundle still supports the script installer, in PowerShell:
 
 ```powershell
 Expand-Archive .\hp-charge-limit-desktop-*.zip -DestinationPath .
@@ -658,12 +798,10 @@ Dashboard editing supports the shipped systemd unit without drop-ins and a
 simple settings file on Linux, and standard service installations on Windows.
 Custom unit files and launch commands are left intact.
 
-Tray autostart is opt-in (checkbox/menu): an XDG autostart entry on Linux or
-an `HKCU\...\Run` value on Windows. Closing the dashboard exits its process;
-**Quit** in the tray stops only the tray, not the service, and does not kill a
-running dashboard. KDE Plasma supports the tray directly; GNOME needs an
-AppIndicator/KStatusNotifierItem extension. Windows uses the native tray.
-The dashboard requires a graphical session and working GPU driver; the tray
+See [Use the tray icon](#use-the-tray-icon-optional) for launch and login
+options. Login startup uses an XDG autostart entry on Linux or an
+`HKCU\...\Run` value on Windows. The dashboard requires a graphical session
+and working GPU driver; the tray
 does not load GPUI or a GPU renderer. It keeps the dark, responsive layout,
 480 × 480 minimum window size, and five-second status refresh.
 
@@ -687,6 +825,27 @@ and Clippy, but native MSVC builds, runtime behavior, and the PowerShell
 and Inno Setup installers still need the Windows CI run and testing on a
 Windows machine. Installer builds and service-preservation smoke tests are
 configured in CI; see [`packaging/windows/`](packaging/windows/).
+
+#### Linux RAM usage
+
+Measured with release builds on Arch Linux with KDE Plasma (Wayland), with
+charge limiting active and the dashboard idle at its default size. These are
+approximate per-process figures from one machine, not system requirements.
+
+| Process | Resident RAM (RSS) | Share of resident RAM (PSS) |
+| --- | ---: | ---: |
+| Background limiter service | 6.0 MiB | Not measured |
+| Tray | 6.4 MiB | 3.9 MiB |
+| Open dashboard | 202.5 MiB | 125.7 MiB |
+
+RSS is the `RES` column in `htop`; it counts shared pages in full for each
+process. PSS splits shared pages across the processes using them. With both
+desktop clients running, they used **129.6 MiB PSS** combined, on top of the
+service. The separate Linux notification helper is not included.
+
+A one-off CLI `status` command peaked at **5.7 MiB RSS** and left no CLI
+process running. You can close the dashboard and leave just the tray open;
+neither is needed for the service to keep limiting charge.
 
 ### Desktop notifications
 
