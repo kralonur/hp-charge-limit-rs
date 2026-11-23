@@ -28,8 +28,9 @@ publisher or SmartScreen warning.
 - Scope is the current user: `%LOCALAPPDATA%\Programs\hp-charge-limit-desktop`.
 - Installs the dashboard, tray, sibling CLI, licenses and Start Menu shortcuts.
 - Registers a stable per-user uninstall entry for Windows Settings.
-- Does not edit PATH, start applications, enable tray autostart, call firmware,
-  or install, update, stop, restart or remove a system service.
+- The final screen offers **Launch HP Charge Limit**. Silent installs launch
+  nothing. Setup does not edit PATH, enable tray autostart, call firmware, or
+  install, update, stop, restart or remove a system service.
 - An existing installation made by `packaging/desktop/install.ps1` is adopted:
   its files/shortcuts are replaced and its ownership marker is removed only
   after installation succeeds. Use Windows Settings to uninstall
@@ -41,10 +42,11 @@ publisher or SmartScreen warning.
 
 The protected service executable under `%ProgramFiles%\hp-charge-limit-rs` is
 separate from the desktop app. Upgrading the app does **not** upgrade that
-copy. To update an existing service, inspect `sc.exe qc hp-charge-limit-rs`, then
-run the new CLI's `service install` from an Administrator terminal with the
-same daemon options. Omitted options revert to defaults. Removing the desktop
-package never requires removing the service.
+copy. For a standard service installation, use **Service management → Update
+service from this app**, or run the new CLI's `service upgrade` from an
+Administrator terminal. Both keep the service settings. If you want to remove
+both the service and the desktop app, select **Remove service** in the dashboard
+before uninstalling the app from Windows Settings.
 
 ## Verification
 
@@ -52,7 +54,8 @@ The Windows desktop workflow builds the installer and runs
 `test-installer.ps1` on its isolated GitHub Actions runner. The test checks:
 
 - unrecognized installation directories are refused without modifying their files;
-- fresh install creates no service, autostart entry or running GUI/tray;
+- silent fresh install creates no service, autostart entry or running GUI/tray;
+- the bundled CLI runs and reports the expected status API version;
 - installed bytes, shortcuts and uninstall registration match;
 - legacy migration/reinstall transfer ownership and preserve opt-in autostart;
 - reinstall/uninstall leave an existing service's arguments, startup mode,
@@ -62,3 +65,5 @@ The Windows desktop workflow builds the installer and runs
 The smoke test intentionally refuses to run outside GitHub Actions or over an
 existing installation/service. It creates a temporary service with custom
 arguments and removes that service during cleanup; it needs no HP firmware.
+On an interactive Windows desktop, also verify that the Finish checkbox opens
+only the dashboard, and that clearing the checkbox leaves it closed.

@@ -50,6 +50,9 @@ Source: "{#RepoDir}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{group}\HP Charge Limit"; Filename: "{app}\hp-charge-limit-gui.exe"; WorkingDir: "{app}"
 Name: "{group}\HP Charge Limit Tray"; Filename: "{app}\hp-charge-limit-tray.exe"; WorkingDir: "{app}"
 
+[Run]
+Filename: "{app}\hp-charge-limit-gui.exe"; Description: "Launch HP Charge Limit"; Flags: postinstall nowait skipifsilent
+
 [Code]
 function LegacyMarkerIsOurs(): Boolean;
 var

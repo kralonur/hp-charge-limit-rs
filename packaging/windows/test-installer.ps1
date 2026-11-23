@@ -92,9 +92,13 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $uninstallKey)) 'Refused install created uninstall registration.'
     Remove-Item -LiteralPath $app -Recurse -Force
 
-    # Fresh install must not enable a service, start applications or add autorun.
+    # A silent fresh install must not enable a service, start applications or add autorun.
     Run-Setup $installerPath 'fresh-install'
     Assert-Installed
+    $statusJson = & (Join-Path $app 'hp-charge-limit-rs.exe') status --json --brief
+    Assert-True ($LASTEXITCODE -eq 0) 'Bundled CLI could not query status after install.'
+    $status = $statusJson | ConvertFrom-Json
+    Assert-True ($status.api_version -eq 1 -and $status.service -eq 'missing') 'Bundled CLI did not report a fresh install.'
     Assert-True (-not (Get-Service -Name 'hp-charge-limit-rs' -ErrorAction SilentlyContinue)) 'Installer created a service.'
     Assert-True (-not (Test-Path -LiteralPath $protectedExe)) 'Installer created a protected service binary.'
     Assert-True (-not (Get-ItemPropertyValue -LiteralPath $runKey -Name $runName -ErrorAction SilentlyContinue)) 'Installer enabled tray startup.'
