@@ -18,10 +18,17 @@ $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 $runName = 'HpChargeLimitTray'
 $protectedExe = Join-Path $env:ProgramFiles 'hp-charge-limit-rs\hp-charge-limit-rs.exe'
 $uninstaller = Join-Path $app 'unins000.exe'
+
+function Get-TrayStartup {
+    if (Test-Path -LiteralPath $runKey) {
+        return (Get-Item -LiteralPath $runKey).GetValue($runName)
+    }
+}
+
 if ((Test-Path -LiteralPath $app) -or (Test-Path -LiteralPath $shortcuts) -or
     (Test-Path -LiteralPath $uninstallKey) -or (Test-Path -LiteralPath $protectedExe) -or
     (Get-Service -Name 'hp-charge-limit-rs' -ErrorAction SilentlyContinue) -or
-    (Get-ItemPropertyValue -LiteralPath $runKey -Name $runName -ErrorAction SilentlyContinue)) {
+    ($null -ne (Get-TrayStartup))) {
     throw 'Refusing to test over an existing installation, service or tray startup entry.'
 }
 
@@ -101,7 +108,7 @@ try {
     Assert-True ($status.api_version -eq 1 -and $status.service -eq 'missing') 'Bundled CLI did not report a fresh install.'
     Assert-True (-not (Get-Service -Name 'hp-charge-limit-rs' -ErrorAction SilentlyContinue)) 'Installer created a service.'
     Assert-True (-not (Test-Path -LiteralPath $protectedExe)) 'Installer created a protected service binary.'
-    Assert-True (-not (Get-ItemPropertyValue -LiteralPath $runKey -Name $runName -ErrorAction SilentlyContinue)) 'Installer enabled tray startup.'
+    Assert-True ($null -eq (Get-TrayStartup)) 'Installer enabled tray startup.'
 
     # Deliberately create a service using custom options. No HP firmware needed.
     & $cli service install --stop 80 --start 75 --off-mode keep
@@ -119,12 +126,12 @@ try {
     Run-Setup $installerPath 'reinstall'
     Assert-Installed
     Assert-True (-not (Test-Path -LiteralPath $marker)) 'Legacy script still owns the installation.'
-    Assert-True ((Get-ItemPropertyValue -LiteralPath $runKey -Name $runName) -eq $ownedRun) 'Reinstall changed tray startup.'
+    Assert-True ((Get-TrayStartup) -eq $ownedRun) 'Reinstall changed tray startup.'
     Assert-True ((Service-Snapshot) -eq $before) 'Reinstall changed or restarted the service.'
 
     Run-Setup $uninstaller 'uninstall'
     Assert-Removed
-    Assert-True (-not (Get-ItemPropertyValue -LiteralPath $runKey -Name $runName -ErrorAction SilentlyContinue)) 'Owned startup entry remains.'
+    Assert-True ($null -eq (Get-TrayStartup)) 'Owned startup entry remains.'
     Assert-True ((Service-Snapshot) -eq $before) 'Uninstall changed or restarted the service.'
 
     # An autorun command belonging to a different installation must survive.
@@ -137,11 +144,11 @@ try {
     Assert-True (-not (Test-Path -LiteralPath $marker)) 'Legacy ownership marker remains after adoption.'
     Run-Setup $uninstaller 'uninstall-with-foreign-startup'
     Assert-Removed
-    Assert-True ((Get-ItemPropertyValue -LiteralPath $runKey -Name $runName) -eq $foreignRun) 'Uninstall deleted a foreign startup entry.'
+    Assert-True ((Get-TrayStartup) -eq $foreignRun) 'Uninstall deleted a foreign startup entry.'
     Assert-True ((Service-Snapshot) -eq $before) 'Installation lifecycle changed the existing service.'
     Write-Host 'Unsigned installer smoke tests passed; the service and its custom arguments were preserved.'
 } finally {
     if ($serviceCreated) { & $cli service uninstall }
     if (Test-Path -LiteralPath $uninstaller) { Run-Setup $uninstaller 'cleanup' }
-    Remove-ItemProperty -LiteralPath $runKey -Name $runName -ErrorAction SilentlyContinue
+    if ($null -ne (Get-TrayStartup)) { Remove-ItemProperty -LiteralPath $runKey -Name $runName }
 }
