@@ -172,11 +172,9 @@ jobs:
             dist/*.sha256
           if-no-files-found: error
 
-  desktop-windows:
-    name: Package optional Windows desktop
+  desktop:
+    name: Package optional desktop
     uses: ./.github/workflows/desktop.yml
-    with:
-      windows-only: true
 
   publish:
     name: Publish CLI release
@@ -215,15 +213,16 @@ jobs:
 
   publish-desktop:
     name: Attach optional desktop assets
-    needs: [publish, desktop-windows]
-    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.desktop-windows.result == 'success' }}
+    needs: [publish, desktop]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.desktop.result == 'success' }}
     runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: desktop-windows-x86_64-msvc
+          pattern: desktop-*
+          merge-multiple: true
           path: dist
 
       - name: Verify checksums and attach optional assets
@@ -234,4 +233,4 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           sha256sum --check *.sha256
-          gh release upload "$TAG" *.zip *-setup.exe *.sha256
+          gh release upload "$TAG" *.tar.gz *.zip *-setup.exe *.sha256

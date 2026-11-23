@@ -118,14 +118,14 @@ library is too old, use the [CLI packages](#install) or
    For another distribution or kernel, check its documentation for the
    matching `acpi_call` package and polkit setup. If installation fails, fix
    that before continuing.
-2. **Download the app.** Sign in to GitHub and open the
-   [Desktop workflow](https://github.com/kralonur/hp-charge-limit-rs/actions/workflows/desktop.yml).
-   Open a successful run with a Linux build and, under **Artifacts**, download
-   **desktop-linux-x86_64-gnu**. This is a build download, not a file on the
-   Releases page. If there is no downloadable artifact, use a newer
-   successful run or [build locally](#desktop-dashboard-and-tray).
+2. **Download the app.** Open
+   [GitHub Releases](https://github.com/kralonur/hp-charge-limit-rs/releases)
+   and expand **Assets** on the newest release that includes the desktop app.
+   Download
+   `hp-charge-limit-desktop-v<version>-x86_64-unknown-linux-gnu.tar.gz`.
+   Don't choose the `musl` CLI download or **Source code**.
 3. **Extract and install it.** In your file manager, extract the downloaded
-   ZIP, then extract the `.tar.gz` inside it. Open the resulting folder that
+   `.tar.gz`. Open the resulting folder that
    contains `install.sh`. Right-click an empty area and choose **Open in
    Terminal** (some file managers call it **Open Terminal Here**). Run:
 
@@ -735,9 +735,8 @@ service status, diagnostics, and charge control. The existing background
 service enforces the charge limits independently of the desktop app. The CLI
 remains its own workspace and never links GPUI.
 
-The separate desktop workflow produces optional bundles as Actions artifacts.
-The release workflow also publishes the Windows ZIP and unsigned per-user
-installer; the Linux desktop bundle remains an Actions artifact:
+Releases include these optional desktop bundles, plus the unsigned Windows
+per-user installer:
 
 - `hp-charge-limit-desktop-v<version>-x86_64-unknown-linux-gnu.tar.gz`
 - `hp-charge-limit-desktop-v<version>-x86_64-pc-windows-msvc.zip`
@@ -1031,10 +1030,10 @@ x86_64 and ARM64 binaries. Archives include the binary, README, licenses,
 systemd unit, default config, D-Bus policy, and notifier autostart entry, with
 a separate SHA256 checksum. The same workflow builds an x86_64 Windows
 `.exe` (static CRT) packaged as a `.zip` with README and licenses. The
-Desktop workflow is reused to build the optional Windows GUI/tray ZIP and
-unsigned Inno Setup installer. Successful optional builds are attached after
+Desktop workflow is reused to build the optional Linux GUI/tray bundle and
+the Windows GUI/tray ZIP and unsigned Inno Setup installer. Successful optional builds are attached after
 CLI publication. Optional failures do not block the CLI
-release. Linux GUI/tray bundles remain separate Desktop workflow artifacts.
+release.
 
 Set the version in the root `Cargo.toml`, refresh all three `Cargo.lock`
 files (root, `desktop/`, and `gui/`, which also lock the path dependency on

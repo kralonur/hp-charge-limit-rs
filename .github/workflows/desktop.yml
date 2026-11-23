@@ -1,8 +1,8 @@
 name: Desktop
 
 # Optional desktop builds stay separate from the CLI workspaces. The release
-# workflow reuses the Windows job and publishes its ZIP and unsigned installer;
-# ordinary runs only upload Actions artifacts.
+# workflow reuses both jobs and publishes the Linux bundle, the Windows ZIP and
+# the unsigned installer; ordinary runs only upload Actions artifacts.
 
 on:
   push:
@@ -35,11 +35,6 @@ on:
       - '.github/workflows/desktop.yml'
   workflow_dispatch:
   workflow_call:
-    inputs:
-      windows-only:
-        description: Skip the Linux desktop build when packaging a Windows release
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -54,7 +49,6 @@ env:
 
 jobs:
   linux:
-    if: ${{ !inputs.windows-only }}
     name: Linux GNU desktop
     runs-on: ubuntu-26.04
     timeout-minutes: 60
