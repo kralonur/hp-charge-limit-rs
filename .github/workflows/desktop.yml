@@ -1,0 +1,319 @@
+name: Desktop
+
+# Optional desktop builds stay separate from the CLI workspaces. The release
+# workflow reuses the Windows job and publishes its ZIP and unsigned installer;
+# ordinary runs only upload Actions artifacts.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'tests/**'
+      - 'desktop/**'
+      - 'gui/**'
+      - 'protocol/**'
+      - 'packaging/**'
+      - 'README.md'
+      - 'LICENSE-*'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'src/**'
+      - 'tests/**'
+      - 'desktop/**'
+      - 'gui/**'
+      - 'protocol/**'
+      - 'packaging/**'
+      - 'README.md'
+      - 'LICENSE-*'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      windows-only:
+        description: Skip the Linux desktop build when packaging a Windows release
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    if: ${{ !inputs.windows-only }}
+    name: Linux GNU desktop
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      # All three workspaces share one target directory so the core crate and
+      # the desktop library are not rebuilt for every workspace. Keep it
+      # relative: every cargo command below runs from the repository root.
+      CARGO_TARGET_DIR: target/desktop-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      # gpui-pre links libxcb, libxkbcommon(-x11), fontconfig and freetype.
+      # Wayland and Vulkan are loaded at runtime, so their -dev packages are
+      # not needed for this build. The GUI is built as a GNU dynamic binary,
+      # never musl.
+      - name: Install GPUI build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential pkg-config desktop-file-utils \
+            libxcb1-dev libxcb-xkb-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libfontconfig1-dev libfreetype-dev
+
+      - name: Check installer syntax
+        run: |
+          sh -n packaging/desktop/install.sh
+          bash -n packaging/desktop/install.sh
+          sh packaging/desktop/install.sh --help >/dev/null
+
+      - name: Test all workspaces
+        run: |
+          cargo test --locked
+          cargo test --locked --manifest-path desktop/Cargo.toml --features tray
+          cargo test --locked --manifest-path gui/Cargo.toml
+
+      - name: Clippy all workspaces
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path desktop/Cargo.toml --features tray --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path gui/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build all three binaries
+        run: |
+          cargo build --locked --release --bin hp-charge-limit-rs
+          cargo build --locked --release --manifest-path desktop/Cargo.toml --features tray
+          cargo build --locked --release --manifest-path gui/Cargo.toml
+          "$CARGO_TARGET_DIR/release/hp-charge-limit-rs" --version
+          test -x "$CARGO_TARGET_DIR/release/hp-charge-limit-gui"
+          test -x "$CARGO_TARGET_DIR/release/hp-charge-limit-tray"
+
+      - name: Smoke-test the per-user installer
+        run: |
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          mkdir -p "$tmp/bundle"
+          cp "$CARGO_TARGET_DIR/release/hp-charge-limit-rs" \
+             "$CARGO_TARGET_DIR/release/hp-charge-limit-gui" \
+             "$CARGO_TARGET_DIR/release/hp-charge-limit-tray" \
+             "$tmp/bundle/"
+          cp packaging/desktop/install.sh "$tmp/bundle/"
+          chmod 755 "$tmp/bundle/install.sh"
+
+          export HOME="$tmp/home space%"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          sh "$tmp/bundle/install.sh"
+          test -x "$HOME/.local/lib/hp-charge-limit-desktop/hp-charge-limit-rs"
+          test -x "$HOME/.local/lib/hp-charge-limit-desktop/hp-charge-limit-gui"
+          test -x "$HOME/.local/lib/hp-charge-limit-desktop/hp-charge-limit-tray"
+          test -f "$XDG_DATA_HOME/applications/io.github.kralonur.HpChargeLimit.Gui.desktop"
+          test -f "$XDG_DATA_HOME/applications/io.github.kralonur.HpChargeLimit.Tray.desktop"
+          desktop-file-validate "$XDG_DATA_HOME/applications/io.github.kralonur.HpChargeLimit.Gui.desktop"
+          desktop-file-validate "$XDG_DATA_HOME/applications/io.github.kralonur.HpChargeLimit.Tray.desktop"
+          test ! -e "$XDG_CONFIG_HOME/autostart/io.github.kralonur.HpChargeLimit.Tray.desktop"
+          sh "$tmp/bundle/install.sh" --uninstall
+          test ! -e "$HOME/.local/lib/hp-charge-limit-desktop"
+          test ! -e "$XDG_DATA_HOME/applications/io.github.kralonur.HpChargeLimit.Gui.desktop"
+
+      - name: Package desktop bundle
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          name="hp-charge-limit-desktop-v$version-x86_64-unknown-linux-gnu"
+          mkdir -p "dist/$name"
+          install -m755 "$CARGO_TARGET_DIR/release/hp-charge-limit-rs" "dist/$name/"
+          install -m755 "$CARGO_TARGET_DIR/release/hp-charge-limit-gui" "dist/$name/"
+          install -m755 "$CARGO_TARGET_DIR/release/hp-charge-limit-tray" "dist/$name/"
+          install -m755 packaging/desktop/install.sh "dist/$name/install.sh"
+          install -m644 README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cd dist
+          tar -czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-linux-x86_64-gnu
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  windows:
+    name: Windows MSVC desktop
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_TARGET_DIR: target/desktop-ci
+      # Match the core release: the exes run without the VC++ redistributable.
+      RUSTFLAGS: -C target-feature=+crt-static
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+
+      - name: Check release version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test "$TAG" = "v$version"
+
+      - name: Check installer syntax
+        shell: pwsh
+        run: |
+          foreach ($path in @('packaging/desktop/install.ps1', 'packaging/windows/build.ps1', 'packaging/windows/test-installer.ps1')) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path).Path, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors.Count) { throw ($errors.Message -join "`n") }
+          }
+
+      - name: Test all workspaces
+        run: |
+          cargo test --locked
+          cargo test --locked --manifest-path desktop/Cargo.toml --features tray
+          cargo test --locked --manifest-path gui/Cargo.toml
+
+      - name: Clippy all workspaces
+        run: |
+          cargo clippy --locked --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path desktop/Cargo.toml --features tray --all-targets -- -D warnings
+          cargo clippy --locked --manifest-path gui/Cargo.toml --all-targets -- -D warnings
+
+      - name: Build all three binaries
+        run: |
+          cargo build --locked --release --bin hp-charge-limit-rs
+          cargo build --locked --release --manifest-path desktop/Cargo.toml --features tray
+          cargo build --locked --release --manifest-path gui/Cargo.toml
+          "$CARGO_TARGET_DIR/release/hp-charge-limit-rs.exe" --version
+          test -f "$CARGO_TARGET_DIR/release/hp-charge-limit-gui.exe"
+          test -f "$CARGO_TARGET_DIR/release/hp-charge-limit-tray.exe"
+
+      - name: Smoke-test Windows service settings, upgrade and lifecycle
+        run: |
+          exe="$CARGO_TARGET_DIR/release/hp-charge-limit-rs.exe"
+          installed=$(cygpath -u "${ProgramW6432:-$ProgramFiles}")/hp-charge-limit-rs/hp-charge-limit-rs.exe
+          if sc.exe query hp-charge-limit-rs || test -e "$installed"; then
+            echo 'Refusing to test over an existing installation.' >&2
+            exit 1
+          fi
+          tmp=$(mktemp -d)
+          trap '"$exe" service uninstall; rm -rf "$tmp"' EXIT
+          wait_running() {
+            for _ in $(seq 40); do
+              if sc.exe query hp-charge-limit-rs | grep RUNNING; then return 0; fi
+              sleep 0.5
+            done
+            return 1
+          }
+          "$exe" service install --start 40 --stop 50 --interval 17 --off-min 10 --stop-mode keep
+          wait_running
+          "$exe" service configure --start 75 --stop 80 --off-mode inhibit --run-mode hold
+          wait_running
+          "$exe" status --json | python -c 'import json,sys; s=json.load(sys.stdin); assert s["api_version"] == 1 and s["service"] == "running" and s["settings"]["Ok"]["off_mode"] == "inhibit"'
+          config=$(sc.exe qc hp-charge-limit-rs)
+          for expected in --start=75 --stop=80 --off-mode=inhibit --interval=17 --off-min=10 --run-mode=hold --stop-mode=keep AUTO_START Winmgmt; do
+            grep -Fi -- "$expected" <<< "$config"
+          done
+          "$exe" service disable
+          sc.exe qc hp-charge-limit-rs | grep DEMAND_START
+          wait_running
+          cp "$exe" "$tmp/hp-charge-limit-rs.exe"
+          printf '\nUpgrade smoke-test marker\n' >> "$tmp/hp-charge-limit-rs.exe"
+          "$tmp/hp-charge-limit-rs.exe" service upgrade
+          cmp "$tmp/hp-charge-limit-rs.exe" "$installed"
+          sc.exe qc hp-charge-limit-rs | grep DEMAND_START
+          sc.exe qc hp-charge-limit-rs | grep -F -- --start=75
+          wait_running
+          "$exe" service stop
+          sc.exe query hp-charge-limit-rs | grep STOPPED
+          "$exe" status --json --brief | python -c 'import json,sys; s=json.load(sys.stdin); assert s["service"] == "stopped" and s["settings"] is None'
+          "$exe" service enable
+          sc.exe qc hp-charge-limit-rs | grep AUTO_START
+          sc.exe query hp-charge-limit-rs | grep STOPPED
+          "$exe" service start
+          wait_running
+          "$exe" service uninstall
+          if sc.exe query hp-charge-limit-rs; then exit 1; fi
+
+      - name: Build unsigned Windows installer
+        shell: pwsh
+        run: ./packaging/windows/build.ps1 -BinaryDir "$env:CARGO_TARGET_DIR/release" -OutputDir dist
+
+      - name: Smoke-test the unsigned Windows installer
+        shell: pwsh
+        run: |
+          $installer = (Get-ChildItem -Path dist/*-setup.exe).FullName
+          ./packaging/windows/test-installer.ps1 -Installer $installer -BinaryDir "$env:CARGO_TARGET_DIR/release"
+
+      - name: Smoke-test the per-user installer
+        run: |
+          tmp=$(mktemp -d)
+          trap 'rm -rf "$tmp"' EXIT
+          win_tmp=$(cygpath -w "$tmp")
+          cp "$CARGO_TARGET_DIR/release/hp-charge-limit-rs.exe" \
+             "$CARGO_TARGET_DIR/release/hp-charge-limit-gui.exe" \
+             "$CARGO_TARGET_DIR/release/hp-charge-limit-tray.exe" \
+             "$tmp/"
+          cp packaging/desktop/install.ps1 "$tmp/"
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$win_tmp\install.ps1"
+          powershell -NoProfile -Command 'if (-not (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs\hp-charge-limit-desktop\hp-charge-limit-gui.exe"))) { exit 1 }'
+          powershell -NoProfile -Command 'if (-not (Test-Path -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\HP Charge Limit\HP Charge Limit.lnk"))) { exit 1 }'
+          powershell -NoProfile -ExecutionPolicy Bypass -File "$win_tmp\install.ps1" -Uninstall
+          powershell -NoProfile -Command 'if (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA "Programs\hp-charge-limit-desktop")) { exit 1 }'
+
+      - name: Package desktop bundle
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          name="hp-charge-limit-desktop-v$version-x86_64-pc-windows-msvc"
+          mkdir -p "dist/$name"
+          cp "$CARGO_TARGET_DIR/release/hp-charge-limit-rs.exe" "dist/$name/"
+          cp "$CARGO_TARGET_DIR/release/hp-charge-limit-gui.exe" "dist/$name/"
+          cp "$CARGO_TARGET_DIR/release/hp-charge-limit-tray.exe" "dist/$name/"
+          cp packaging/desktop/install.ps1 README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
+          cd dist
+          7z a -tzip "$name.zip" "$name"
+          sha256sum "$name.zip" > "$name.zip.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-windows-x86_64-msvc
+          path: |
+            dist/*.zip
+            dist/*-setup.exe
+            dist/*.sha256
+          if-no-files-found: error
