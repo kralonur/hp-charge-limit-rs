@@ -67,6 +67,11 @@ Choose [Windows](#windows-desktop) or [Linux](#linux-desktop), then follow
 include the command-line tool (CLI); you don't need to install it separately.
 Installing the app alone does **not** start charge limiting.
 
+<p align="center">
+  <img src="docs/images/desktop-dashboard.png" width="600"
+    alt="HP Charge Limit dashboard showing a plugged-in battery held at 80% with charge limiting on">
+</p>
+
 ### Windows desktop
 
 1. Open [GitHub Releases](https://github.com/kralonur/hp-charge-limit-rs/releases)
@@ -149,6 +154,16 @@ library is too old, use the [CLI packages](#install) or
    80%). Check **I checked compatibility and agree to install and enable the
    service**, click **Install and enable service**, then approve the system
    prompt. The service starts now and on future boots.
+
+<details>
+<summary>Show charging and advanced settings</summary>
+
+<p align="center">
+  <img src="docs/images/desktop-advanced-settings.png" width="600"
+    alt="Charging settings with resume and stop thresholds, shutdown behavior, and expanded advanced settings">
+</p>
+
+</details>
 
 If you already have the service, the dashboard uses it without replacing it.
 Click **Start existing service** if it is stopped. Closing the app or tray
