@@ -37,8 +37,8 @@ if ($Uninstall) {
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     $runValue = 'HpChargeLimitTray'
     $expected = '"' + (Join-Path $installDir 'hp-charge-limit-tray.exe') + '"'
-    $existing = Get-ItemPropertyValue -LiteralPath $runKey -Name $runValue -ErrorAction SilentlyContinue
-    if ($existing -eq $expected) {
+    if ((Test-Path -LiteralPath $runKey) -and
+        (Get-Item -LiteralPath $runKey).GetValue($runValue) -eq $expected) {
         Remove-ItemProperty -LiteralPath $runKey -Name $runValue
     }
     foreach ($binary in $binaries) {
