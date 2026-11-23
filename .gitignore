@@ -1,1 +1,4 @@
 /target/
+/gui/target/
+/desktop/target/
+/dist/
