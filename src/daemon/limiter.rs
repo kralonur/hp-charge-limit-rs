@@ -12,8 +12,7 @@
 use crate::events::Event;
 use crate::firmware::{ChargeControl, Mode};
 use crate::power::Reading;
-use clap::ValueEnum;
-use std::fmt;
+use hp_charge_limit_protocol::StopAction;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Band {
@@ -244,34 +243,6 @@ impl Limiter {
     #[cfg_attr(not(windows), allow(dead_code))]
     pub fn resume(&mut self) {
         self.state = State::Starting;
-    }
-}
-
-/// What to do with the firmware mode when the limiter ends.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-pub enum StopAction {
-    Auto,
-    Inhibit,
-    Hold,
-    /// Leave whatever mode is set
-    Keep,
-}
-
-impl StopAction {
-    pub fn mode(self) -> Option<Mode> {
-        match self {
-            StopAction::Auto => Some(Mode::Auto),
-            StopAction::Inhibit => Some(Mode::Inhibit),
-            StopAction::Hold => Some(Mode::Hold),
-            StopAction::Keep => None,
-        }
-    }
-}
-
-impl fmt::Display for StopAction {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = self.to_possible_value().expect("no skipped variants");
-        f.write_str(value.get_name())
     }
 }
 

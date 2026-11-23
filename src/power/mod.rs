@@ -62,11 +62,45 @@ impl Voltage {
     pub const fn from_uv(uv: i64) -> Self {
         Self(uv)
     }
+    pub const fn uv(self) -> i64 {
+        self.0
+    }
 }
 
 impl fmt::Display for Voltage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:.2} V", self.0 as f64 / MICRO_PER_UNIT)
+    }
+}
+
+/// Battery readings for one dashboard refresh.
+#[derive(Default)]
+pub struct BatterySnapshot {
+    pub capacity: Option<u8>,
+    pub on_ac: bool,
+    pub status: Option<String>,
+    pub health: Option<f64>,
+    pub cycles: Option<u64>,
+    pub power_watts: Option<f64>,
+    pub energy: Option<Energy>,
+    pub voltage: Option<Voltage>,
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+}
+
+#[cfg(target_os = "linux")]
+pub fn battery_snapshot() -> BatterySnapshot {
+    BatterySnapshot {
+        capacity: capacity(),
+        on_ac: on_ac(),
+        status: status(),
+        health: health(),
+        cycles: cycles(),
+        power_watts: power_watts(),
+        energy: energy(),
+        voltage: voltage(),
+        manufacturer: manufacturer(),
+        model: model(),
     }
 }
 

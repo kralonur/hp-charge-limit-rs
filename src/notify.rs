@@ -6,7 +6,7 @@ use crate::events::{Event, INTERFACE, NAME, PATH};
 use anyhow::{Context, Result, bail};
 use futures_lite::StreamExt;
 use std::collections::HashMap;
-use zbus::fdo::DBusProxy;
+use zbus::fdo::{DBusProxy, RequestNameFlags};
 use zbus::names::BusName;
 use zbus::{Connection, MatchRule, Message, MessageStream, Variant, message};
 
@@ -104,6 +104,12 @@ pub async fn run() -> Result<()> {
     let session = Connection::session()
         .await
         .context("no session bus: run this as your desktop user, inside a login session")?;
+    session
+        .request_name_with_flags("io.github.kralonur.HpChargeLimit.Notify", RequestNameFlags::DO_NOT_QUEUE)
+        .await
+        .context(
+            "A charge-limit notification listener may already be running in this desktop session",
+        )?;
     let system = Connection::system()
         .await
         .context("cannot reach the system bus")?;

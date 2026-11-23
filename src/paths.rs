@@ -13,6 +13,8 @@ pub const OFF_STATE: &str = "/var/lib/hp-charge-limit-rs/off-state";
 pub const LOCK: &str = "/run/hp-charge-limit-rs.lock";
 #[cfg(target_os = "linux")]
 pub const BYPASS: &str = "/run/hp-charge-limit-rs.bypass";
+#[cfg(target_os = "linux")]
+pub const NEXT_CHECK: &str = "/run/hp-charge-limit-rs.next-check";
 
 /// On Windows these live in the data directory (see `at`); the bypass
 /// flag is a volatile registry key there (see `bypass`).
@@ -20,6 +22,8 @@ pub const BYPASS: &str = "/run/hp-charge-limit-rs.bypass";
 pub const OFF_STATE: &str = "off-state";
 #[cfg(windows)]
 pub const LOG: &str = "daemon.log";
+#[cfg(windows)]
+pub const NEXT_CHECK: &str = "next-check";
 
 /// Prefixed to every path when set, to run against fake sysfs/procfs files.
 /// On Windows it replaces the data directory instead.

@@ -11,7 +11,7 @@
 
 #[cfg(windows)]
 mod acl;
-mod bypass;
+pub mod bypass;
 pub mod cli;
 mod daemon;
 mod diagnose;
@@ -19,50 +19,114 @@ mod events;
 mod firmware;
 #[cfg(target_os = "linux")]
 mod notify;
-mod offstate;
+pub mod offstate;
 mod paths;
-mod power;
-mod service;
-mod status;
+pub mod power;
+pub mod service;
+pub mod status;
 #[cfg(windows)]
 mod wmi;
 
 #[cfg(not(any(target_os = "linux", windows)))]
 compile_error!("hp-charge-limit-rs supports Linux and Windows only");
 
-use anyhow::Result;
+use anyhow::{Context, Result, ensure};
 use clap::CommandFactory;
 use cli::{Cli, Cmd};
 use firmware::{ChargeControl, Wmi};
 
 pub fn run(cli: Cli) -> Result<()> {
+    #[cfg(windows)]
+    let show_report = |text: &str| {
+        if cli.desktop_report {
+            desktop_message(text);
+        } else {
+            println!("{text}");
+        }
+    };
+    #[cfg(not(windows))]
+    let show_report = |text: &str| println!("{text}");
     match cli.cmd {
-        Cmd::Status { watch } => status::show(watch),
-        Cmd::Diagnose => diagnose::run(),
+        Cmd::Status { watch, json, brief } => match (json, watch) {
+            (true, Some(seconds)) => status::write_watch_json(seconds),
+            (true, None) => status::write_json(brief),
+            (false, _) => status::show(watch),
+        },
+        Cmd::Diagnose => {
+            let (report, ok) = diagnose::run();
+            show_report(report.trim_end());
+            ensure!(ok, "Diagnostics found problems; see the report.");
+            Ok(())
+        }
+        Cmd::FirmwareStatus => {
+            show_report(&format!("Firmware reports {}", Wmi.read()?));
+            Ok(())
+        }
+        Cmd::Logs => {
+            show_report(&service::recent_logs()?);
+            Ok(())
+        }
+        #[cfg(target_os = "linux")]
+        Cmd::LoadDriver => service::load_driver(),
         #[cfg(target_os = "linux")]
         Cmd::Notify => zbus::block_on(notify::run()),
-        Cmd::Set { mode } => {
+        Cmd::Set { mode, require_idle } => {
+            if require_idle {
+                service::check_manual_mode()?;
+            }
             let mut wmi = Wmi;
             wmi.set(mode)?;
-            println!("set {mode} -> firmware reports {}", wmi.read()?);
+            show_report(&format!(
+                "Set {mode} → firmware reports {}",
+                wmi.read()
+                    .context("The mode was requested, but firmware readback failed")?
+            ));
             Ok(())
         }
         Cmd::Bypass { action } => bypass::set(action),
         Cmd::Daemon(opts) => daemon::run(&opts),
-        #[cfg(windows)]
         Cmd::Service { action } => match action {
+            cli::ServiceAction::Setup { settings } => service::setup(settings.settings()),
+            cli::ServiceAction::Configure { settings } => service::configure(
+                settings
+                    .settings()
+                    .context("Provide --start, --stop and --off-mode together")?,
+            ),
+            cli::ServiceAction::Start => service::start(),
+            cli::ServiceAction::Stop => service::stop(),
+            cli::ServiceAction::Enable => service::set_startup(true),
+            cli::ServiceAction::Disable => service::set_startup(false),
+            #[cfg(windows)]
             cli::ServiceAction::Install(opts) => service::install(&opts),
+            #[cfg(windows)]
+            cli::ServiceAction::Upgrade => service::upgrade(),
             cli::ServiceAction::Uninstall => service::uninstall(),
         },
         Cmd::Completions { shell } => {
-            let mut command = Cli::command();
-            clap_complete::generate(
-                shell,
-                &mut command,
-                "hp-charge-limit-rs",
-                &mut std::io::stdout(),
-            );
+            use std::io::Write;
+            std::io::stdout().write_all(completions(shell).as_bytes())?;
             Ok(())
         }
+    }
+}
+
+pub fn completions(shell: cli::Shell) -> String {
+    let mut script = Vec::new();
+    clap_complete::generate(
+        shell,
+        &mut Cli::command(),
+        "hp-charge-limit-rs",
+        &mut script,
+    );
+    String::from_utf8(script).expect("clap emits UTF-8 completion scripts")
+}
+
+#[cfg(windows)]
+pub fn desktop_message(text: &str) {
+    use windows::Win32::UI::WindowsAndMessaging::{MB_OK, MB_SETFOREGROUND, MessageBoxW};
+    use windows::core::{HSTRING, w};
+    let text = HSTRING::from(text.replace('\0', "�"));
+    unsafe {
+        MessageBoxW(None, &text, w!("HP Charge Limit"), MB_OK | MB_SETFOREGROUND);
     }
 }

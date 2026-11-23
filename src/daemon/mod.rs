@@ -7,10 +7,9 @@
 mod limiter;
 #[cfg(target_os = "linux")]
 mod linux;
+mod schedule;
 #[cfg(windows)]
 mod windows;
-
-pub use limiter::StopAction;
 
 #[cfg(target_os = "linux")]
 use self::linux as platform;
@@ -24,9 +23,11 @@ use crate::events::Event;
 use crate::firmware::Wmi;
 use crate::{bypass, offstate, power};
 use anyhow::Result;
+use hp_charge_limit_protocol::StopAction;
 use limiter::{Band, Exit, ExitPolicy, Limiter};
+pub(crate) use schedule::next_check_unix_ms;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Used when capacity can't be read at start or exit: counts as empty, so
 /// the battery charges rather than holds.
@@ -132,9 +133,11 @@ fn run_loop(o: &DaemonOpts, controls: Receiver<Control>) -> Result<()> {
             publisher.publish(limiter);
         }
     };
-    // wait one interval for a control message; a timeout is the next tick
+    // Wait one interval for a control message; a timeout is the next tick.
     let exit = loop {
-        match controls.recv_timeout(interval) {
+        let waiting_since = Instant::now();
+        schedule::publish(interval);
+        match controls.recv_timeout(interval.saturating_sub(waiting_since.elapsed())) {
             Err(RecvTimeoutError::Timeout) => tick(&mut limiter, &mut publisher, &mut wmi),
             Ok(Control::Suspend(done)) => {
                 let capacity = capacity();
@@ -154,6 +157,7 @@ fn run_loop(o: &DaemonOpts, controls: Receiver<Control>) -> Result<()> {
         }
     };
 
+    schedule::clear();
     let capacity = capacity();
     let left = limiter.finish(exit, &exit_policy(o), capacity, &mut wmi);
     if exit == Exit::Shutdown {
