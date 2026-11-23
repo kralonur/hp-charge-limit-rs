@@ -49,6 +49,7 @@ board (8BCD) inhibit kept blocking charging while off, 80% → 79% over
   - [Windows](#windows)
 - [Use](#use)
   - [Setup diagnostics](#setup-diagnostics)
+  - [Desktop dashboard and tray](#desktop-dashboard-and-tray)
   - [Desktop notifications](#desktop-notifications)
   - [Shell completion](#shell-completion)
   - [Temporary full-charge bypass](#temporary-full-charge-bypass)
@@ -363,10 +364,21 @@ buffer or integer argument. It is also the slot mainline Linux `hp-wmi` drives f
 with the same auto/inhibit values. Run everything from an
 **administrator** terminal.
 
-**Get it:** download the `x86_64-pc-windows-msvc` `.zip` from GitHub Releases
-(or from a manual workflow run's artifacts), or build from source with
-`cargo build --locked --release`. The exe is not code-signed, so
-SmartScreen may warn before the first run.
+**Get it:** download the CLI-only `x86_64-pc-windows-msvc` `.zip` from GitHub
+Releases (or a manual workflow run's artifacts), or build from source with
+`cargo build --locked --release`. For the optional dashboard and tray, use
+`hp-charge-limit-desktop-v<version>-x86_64-setup.exe`; it installs per-user
+without enabling the service or tray autostart. These executables and the
+installer are **unsigned**: Windows may show an unknown publisher or
+SmartScreen warning.
+
+Upgrading the desktop app does **not** update the protected
+service copy under `%ProgramFiles%\hp-charge-limit-rs`. To update that copy,
+inspect `sc.exe qc hp-charge-limit-rs` and repeat `service install` using the
+new CLI with your existing daemon options from an Administrator terminal;
+omitted options use defaults. Uninstalling the app leaves the service and its
+settings intact; remove the service separately with `service uninstall` when
+wanted. See [installer details](packaging/windows/).
 
 **Test in this order** and stop at the first step that fails. If you already
 have the service or a foreground daemon running, stop it first so it does
@@ -550,6 +562,132 @@ through `/proc/acpi/call` (requiring write access), not a mode-setting call.
 Running without sudo can report permission failures. Successful diagnostics do not prove firmware compatibility or actual
 charge blocking.
 
+### Desktop dashboard and tray
+
+An optional desktop client lives in [`gui/`](gui/) and [`desktop/`](desktop/).
+The dashboard uses Zed's GPUI through `gpui-kit`; the tray is a small ksni
+(Linux) or native Win32 (Windows) process. Both invoke the CLI for battery and
+service status, diagnostics, and charge control. The existing background
+service enforces the charge limits independently of the desktop app. The CLI
+remains its own workspace and never links GPUI.
+
+The separate desktop workflow produces optional bundles as Actions artifacts.
+The release workflow also publishes the Windows ZIP and unsigned per-user
+installer; the Linux desktop bundle remains an Actions artifact:
+
+- `hp-charge-limit-desktop-v<version>-x86_64-unknown-linux-gnu.tar.gz`
+- `hp-charge-limit-desktop-v<version>-x86_64-pc-windows-msvc.zip`
+
+Extract the bundle and run its installer as your desktop user, **not with
+sudo**:
+
+```sh
+tar -xzf hp-charge-limit-desktop-*.tar.gz
+cd hp-charge-limit-desktop-*
+./install.sh
+```
+
+On Windows, prefer the unsigned `hp-charge-limit-desktop-v<version>-x86_64-setup.exe`
+installer, and uninstall it from Windows
+Settings, not `install.ps1`. Alternatively, the ZIP bundle
+still supports the script installer, in PowerShell:
+
+```powershell
+Expand-Archive .\hp-charge-limit-desktop-*.zip -DestinationPath .
+cd .\hp-charge-limit-desktop-*
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+The script installer puts the CLI, dashboard, and tray side by side in
+`~/.local/lib/hp-charge-limit-desktop` (Linux) or
+`%LOCALAPPDATA%\Programs\hp-charge-limit-desktop` (Windows), and adds launch
+entries under `~/.local/share/applications` or Start Menu shortcuts. It does
+not elevate, install/start/enable the service, or create an autostart entry.
+Remove only these per-user files with `./install.sh --uninstall` or
+`.\install.ps1 -Uninstall`; the service and its configuration are untouched.
+The installer never replaces an existing system CLI: a differing copy is left
+to its package manager, and a per-user directory it did not create is refused.
+A compatible CLI is required, but no terminal is needed. The desktop app
+prefers the matching CLI shipped in the bundle and only looks for an installed
+CLI if the bundled copy is missing. It uses versioned `status --json` output
+for battery and service data without attempting firmware readback. Fresh Linux
+setup still refuses to replace a different system CLI; update that copy separately
+first.
+
+Opening the dashboard does not change a running service. If it is stopped,
+**Start existing service** starts it without changing its settings or boot
+startup. If the service is missing,
+read-only diagnostics and a compatibility-consent checkbox gate
+**Install and enable service**, which creates a fresh service. Choose the
+resume and stop percentages and **Shutdown behavior** before installing, or
+keep the default 40–50% band. If a Linux configuration file already exists,
+setup keeps it and offers editing after installation. `service setup` is
+fresh-only on both platforms; `service start` starts an existing service. If setup fails while
+configuring or starting a new service, it attempts to roll back that install.
+On Windows the protected CLI and data directory remain for a retry. Fresh
+setup reuses an identical CLI but will not replace a different version.
+Linux needs `acpi_call` for the running kernel (DKMS also needs matching
+headers), ACPICA's `iasl` in PATH for firmware discovery, polkit with a desktop
+authentication agent, and systemd. Install prerequisites with your distro's
+package manager; **Load ACPI driver** then loads the already-installed module.
+On Windows the dashboard uses UAC through `ShellExecute` on the CLI; the GUI
+itself never runs elevated.
+
+- The charge controls show a countdown to the limiter’s next scheduled check.
+  Older service versions do not report a countdown.
+- **Charging settings** edits the charge band and shutdown mode. **Advanced
+  settings** also edits the polling interval, running mode, low-battery
+  shutdown exception, stop mode, and Linux notification broadcasts. Saving
+  restarts a running service, preserves boot startup, and leaves a stopped
+  service stopped. For models that only slow charging in Hold, try Inhibit.
+- **Service management** stops the service, toggles boot startup independently
+  of running state, or removes the service with confirmation. Windows can also
+  update the installed service binary from the current desktop bundle without
+  changing its settings. On Linux, removal is limited to the standard unit
+  created by app setup; packaged units belong to the distro's package manager.
+- **Diagnostics & manual control** runs read-only checks, reads the firmware
+  mode and service logs, sets Auto/Inhibit/Hold once when the limiter isn't
+  running, and samples actual energy change in a cancellable timed check.
+  Readback does not prove firmware compatibility or charge blocking. Linux
+  can also show charge notifications while the dashboard is open; an existing
+  packaged login notifier can run without the dashboard.
+- The managed service is the desktop equivalent of running the foreground
+  `daemon`.
+
+Dashboard editing supports the shipped systemd unit without drop-ins and a
+simple settings file on Linux, and standard service installations on Windows.
+Custom unit files and launch commands are left intact.
+
+Tray autostart is opt-in (checkbox/menu): an XDG autostart entry on Linux or
+an `HKCU\...\Run` value on Windows. Closing the dashboard exits its process;
+**Quit** in the tray stops only the tray, not the service, and does not kill a
+running dashboard. KDE Plasma supports the tray directly; GNOME needs an
+AppIndicator/KStatusNotifierItem extension. Windows uses the native tray.
+The dashboard requires a graphical session and working GPU driver; the tray
+does not load GPUI or a GPU renderer. It keeps the dark, responsive layout,
+480 × 480 minimum window size, and five-second status refresh.
+
+Build all three with one target directory from the repository root (the three
+Cargo workspaces are separate):
+
+```sh
+export CARGO_TARGET_DIR="$PWD/target/desktop"
+cargo build --locked --release --bin hp-charge-limit-rs
+cargo build --locked --release --manifest-path desktop/Cargo.toml --features tray
+cargo build --locked --release --manifest-path gui/Cargo.toml
+```
+
+On Debian/Ubuntu the GPUI build needs `build-essential`, `pkg-config`,
+`libxcb1-dev`, `libxcb-xkb-dev`, `libxkbcommon-dev`, `libxkbcommon-x11-dev`,
+`libfontconfig1-dev`, and `libfreetype-dev`. The GUI is built as a GNU
+dynamic binary, not musl. The desktop workflow builds and tests all three
+crates and runs clippy on Linux GNU and Windows MSVC. The
+desktop packaging is implemented. Windows passes local GNU-target type checks
+and Clippy, but native MSVC builds, runtime behavior, and the PowerShell
+and Inno Setup installers still need the Windows CI run and testing on a
+Windows machine. Installer builds and service-preservation smoke tests are
+configured in CI; see [`packaging/windows/`](packaging/windows/).
+
 ### Desktop notifications
 
 The daemon runs as root, so it cannot show notifications itself. Instead it
@@ -718,10 +856,15 @@ The release workflow uses current stable Rust and builds static
 x86_64 and ARM64 binaries. Archives include the binary, README, licenses,
 systemd unit, default config, D-Bus policy, and notifier autostart entry, with
 a separate SHA256 checksum. The same workflow builds an x86_64 Windows
-`.exe` (static CRT) packaged as a `.zip` with README and licenses.
+`.exe` (static CRT) packaged as a `.zip` with README and licenses. The
+Desktop workflow is reused to build the optional Windows GUI/tray ZIP and
+unsigned Inno Setup installer. Successful optional builds are attached after
+CLI publication. Optional failures do not block the CLI
+release. Linux GUI/tray bundles remain separate Desktop workflow artifacts.
 
-Set the version in `Cargo.toml`, update `Cargo.lock`, commit, then push a
-matching version tag to GitHub:
+Set the version in the root `Cargo.toml`, refresh all three `Cargo.lock`
+files (root, `desktop/`, and `gui/`, which also lock the path dependency on
+the core crate), commit, then push a matching new version tag to GitHub:
 
 ```sh
 version=$(cargo pkgid | cut -d'#' -f2)
