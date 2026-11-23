@@ -18,29 +18,8 @@ use hpqbint as backend;
 pub use hpqbint::interface;
 
 use anyhow::Result;
-use clap::ValueEnum;
+pub use hp_charge_limit_protocol::Mode;
 use std::fmt;
-
-/// The modes this tool writes, as their SBCC mode dword.
-/// Others exist (0x0200 force-discharge, 0x0600/0x0700 ship mode) and are
-/// deliberately not representable.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
-#[repr(u32)]
-pub enum Mode {
-    /// Normal charging; clears WACL/SBIS/SBTC/WPBS
-    Auto = 0x0000,
-    /// SBIS: no charging, white LED; the EC clears it at shutdown
-    Inhibit = 0x0500,
-    /// SBTC: no charging, survives shutdown; LED/status still say charging
-    Hold = 0x0300,
-}
-
-impl fmt::Display for Mode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let value = self.to_possible_value().expect("no skipped variants");
-        f.write_str(value.get_name())
-    }
-}
 
 /// The 4 data bytes SBCC reads: the mode as a little-endian dword.
 fn mode_data(mode: Mode) -> [u8; 4] {

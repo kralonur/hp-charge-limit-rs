@@ -4,19 +4,22 @@ use crate::firmware::Wmi;
 #[cfg(target_os = "linux")]
 use crate::paths;
 use crate::{power, service};
-use anyhow::{Result, ensure};
-use std::fmt::Display;
+use std::fmt::{Display, Write as _};
 #[cfg(target_os = "linux")]
 use std::fs::OpenOptions;
 
-fn report(mark: &str, label: impl Display, detail: impl Display) {
-    println!("[{mark}] {label}: {detail}");
-}
+#[derive(Default)]
+struct Report(String);
 
-/// Reports a pass/fail check; returns `ok`.
-fn check(ok: bool, label: impl Display, detail: impl Display) -> bool {
-    report(if ok { "ok" } else { "fail" }, label, detail);
-    ok
+impl Report {
+    fn line(&mut self, mark: &str, label: impl Display, detail: impl Display) {
+        writeln!(self.0, "[{mark}] {label}: {detail}").unwrap();
+    }
+
+    fn check(&mut self, ok: bool, label: impl Display, detail: impl Display) -> bool {
+        self.line(if ok { "ok" } else { "fail" }, label, detail);
+        ok
+    }
 }
 
 /// Vendor, model, board and BIOS version, as far as readable.
@@ -56,10 +59,10 @@ fn machine() -> Machine {
 }
 
 /// Reported only: what testers should include in a report.
-fn identify() {
+fn identify(report: &mut Report) {
     let m = machine();
     let unknown = || "?".to_string();
-    report(
+    report.line(
         "info",
         "machine",
         format!(
@@ -72,32 +75,30 @@ fn identify() {
     );
 }
 
-pub fn run() -> Result<()> {
-    identify();
-    let mut ok = supplies();
-    ok &= firmware();
-    service();
-    println!(
-        "No charge modes changed. Readback does not prove firmware compatibility or charge blocking."
-    );
-    ensure!(ok, "diagnostics found problems; see checks above");
-    Ok(())
+pub fn run() -> (String, bool) {
+    let mut report = Report::default();
+    identify(&mut report);
+    let mut ok = supplies(&mut report);
+    ok &= firmware(&mut report);
+    service(&mut report);
+    report.0.push_str("No charge modes changed. Readback does not prove firmware compatibility or charge blocking.\n");
+    (report.0, ok)
 }
 
 #[cfg(target_os = "linux")]
-fn supplies() -> bool {
+fn supplies(report: &mut Report) -> bool {
     let mut ok = match power::battery() {
         Some(path) => {
-            report("ok", "battery", path.display());
+            report.line("ok", "battery", path.display());
             match power::capacity().filter(|&capacity| capacity <= 100) {
-                Some(capacity) => check(true, "capacity", format!("{capacity}%")),
-                None => check(false, "capacity", "missing or invalid sysfs capacity"),
+                Some(capacity) => report.check(true, "capacity", format!("{capacity}%")),
+                None => report.check(false, "capacity", "missing or invalid sysfs capacity"),
             }
         }
-        None => check(false, "battery", "no present system battery found"),
+        None => report.check(false, "battery", "no present system battery found"),
     };
     let adapters = power::adapters();
-    ok &= check(
+    ok &= report.check(
         !adapters.is_empty(),
         "external power supplies",
         adapters.len(),
@@ -108,14 +109,14 @@ fn supplies() -> bool {
             Some("0") => (true, "offline (normal when unplugged)"),
             _ => (false, "missing or invalid online attribute"),
         };
-        ok &= check(online, adapter.display(), detail);
+        ok &= report.check(online, adapter.display(), detail);
     }
     ok
 }
 
 #[cfg(windows)]
-fn supplies() -> bool {
-    let mut ok = check(
+fn supplies(report: &mut Report) -> bool {
+    let mut ok = report.check(
         power::present(),
         "battery",
         if power::present() {
@@ -125,17 +126,17 @@ fn supplies() -> bool {
         },
     );
     match power::capacity().filter(|&capacity| capacity <= 100) {
-        Some(capacity) => ok &= check(true, "capacity", format!("{capacity}%")),
-        None => ok &= check(false, "capacity", "unknown"),
+        Some(capacity) => ok &= report.check(true, "capacity", format!("{capacity}%")),
+        None => ok &= report.check(false, "capacity", "unknown"),
     }
     let ac = match power::ac_status() {
         Some(true) => (true, "online"),
         Some(false) => (true, "offline (normal when unplugged)"),
         None => (false, "unknown"),
     };
-    ok &= check(ac.0, "AC adapter", ac.1);
+    ok &= report.check(ac.0, "AC adapter", ac.1);
     let details = power::energy().is_some();
-    report(
+    report.line(
         if details { "ok" } else { "warn" },
         "battery details (root\\wmi BatteryStatus)",
         if details {
@@ -148,52 +149,48 @@ fn supplies() -> bool {
 }
 
 #[cfg(target_os = "linux")]
-fn firmware() -> bool {
+fn firmware(report: &mut Report) -> bool {
     let call = paths::at(paths::ACPI_CALL);
     if !call.exists() {
-        report(
+        report.line(
             "fail",
             "acpi_call",
             "interface missing; install/load acpi_call for the running kernel",
         );
-        report(
+        report.line(
             "skip",
             "permissions and firmware readback",
             "ACPI interface missing",
         );
         return false;
     }
-    report("ok", "acpi_call", "interface present");
+    report.line("ok", "acpi_call", "interface present");
     // Opening without truncate checks access without issuing an ACPI call.
     if let Err(e) = OpenOptions::new().read(true).write(true).open(&call) {
-        report(
-            "fail",
-            "permissions",
-            format!("{e}; try sudo hp-charge-limit-rs diagnose"),
-        );
-        report("skip", "firmware readback", "ACPI interface inaccessible");
+        report.line("fail", "permissions", e);
+        report.line("skip", "firmware readback", "ACPI interface inaccessible");
         return false;
     }
-    report("ok", "permissions", "ACPI interface readable and writable");
+    report.line("ok", "permissions", "ACPI interface readable and writable");
     match Wmi.read() {
-        Ok(mode) => check(true, "firmware readback", mode),
-        Err(e) => check(false, "firmware readback", format!("{e:#}")),
+        Ok(mode) => report.check(true, "firmware readback", mode),
+        Err(e) => report.check(false, "firmware readback", format!("{e:#}")),
     }
 }
 
 #[cfg(windows)]
-fn firmware() -> bool {
+fn firmware(report: &mut Report) -> bool {
     match crate::firmware::interface() {
-        Ok(instance) => report("ok", "HP BIOS WMI (root\\wmi hpqBIntM)", instance),
+        Ok(instance) => report.line("ok", "HP BIOS WMI (root\\wmi hpqBIntM)", instance),
         Err(e) => {
-            report("fail", "HP BIOS WMI (root\\wmi hpqBIntM)", format!("{e:#}"));
-            report("skip", "firmware readback", "interface unavailable");
+            report.line("fail", "HP BIOS WMI (root\\wmi hpqBIntM)", format!("{e:#}"));
+            report.line("skip", "firmware readback", "interface unavailable");
             return false;
         }
     }
     match Wmi.read() {
-        Ok(mode) => check(true, "firmware readback (command 1, type 0x2B)", mode),
-        Err(e) => check(
+        Ok(mode) => report.check(true, "firmware readback (command 1, type 0x2B)", mode),
+        Err(e) => report.check(
             false,
             "firmware readback (command 1, type 0x2B)",
             format!("{e:#}"),
@@ -202,22 +199,24 @@ fn firmware() -> bool {
 }
 
 /// Reported only: the service is optional for manual commands.
-fn service() {
+fn service(report: &mut Report) {
     let state = service::service_state();
     let mark = if state == "active" { "ok" } else { "warn" };
-    report(
+    report.line(
         mark,
         "service",
         format!("{state} (optional for manual commands)"),
     );
     match service::service_config() {
         Some(config) => {
-            println!("[info] service configuration (reported, not validated):");
+            report
+                .0
+                .push_str("[info] service configuration (reported, not validated):\n");
             for line in config.lines() {
-                println!("  {line}");
+                writeln!(report.0, "  {line}").unwrap();
             }
         }
-        None => report(
+        None => report.line(
             "warn",
             "service configuration",
             "service not installed or query failed",

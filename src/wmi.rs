@@ -16,7 +16,7 @@ use windows::Win32::System::Variant::{
     VariantToStringAlloc, VariantToUInt32,
 };
 use windows::Win32::System::Wmi::{
-    IWbemClassObject, IWbemLocator, IWbemServices, WBEM_FLAG_FORWARD_ONLY,
+    IEnumWbemClassObject, IWbemClassObject, IWbemLocator, IWbemServices, WBEM_FLAG_FORWARD_ONLY,
     WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_FLAG_RETURN_WBEM_COMPLETE, WBEM_INFINITE, WbemLocator,
 };
 use windows::core::{BSTR, IUnknown, Interface, PCWSTR};
@@ -102,19 +102,23 @@ impl Namespace {
         }
     }
 
+    fn rows(&self, wql: &str) -> Result<IEnumWbemClassObject> {
+        unsafe {
+            self.0.ExecQuery(
+                &BSTR::from("WQL"),
+                &BSTR::from(wql),
+                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                None,
+            )
+        }
+        .map_err(|e| failed(e, wql.to_string()))
+    }
+
     /// All objects a WQL query returns.
     pub fn query(&self, wql: &str) -> Result<Vec<Object>> {
         let mut found = Vec::new();
+        let rows = self.rows(wql)?;
         unsafe {
-            let rows = self
-                .0
-                .ExecQuery(
-                    &BSTR::from("WQL"),
-                    &BSTR::from(wql),
-                    WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-                    None,
-                )
-                .map_err(|e| failed(e, wql.to_string()))?;
             loop {
                 let mut row = [None];
                 let mut returned = 0;
@@ -136,6 +140,19 @@ impl Namespace {
             .query(&format!("SELECT * FROM {class}"))?
             .into_iter()
             .next())
+    }
+
+    /// Read at most one row. If none arrives within `timeout_ms`, return `None`.
+    pub fn first_with_timeout(&self, class: &str, timeout_ms: i32) -> Result<Option<Object>> {
+        let wql = format!("SELECT * FROM {class}");
+        let rows = self.rows(&wql)?;
+        let mut row = [None];
+        let mut returned = 0;
+        unsafe { rows.Next(timeout_ms, &mut row, &mut returned) }
+            .ok()
+            .map_err(|e| failed(e, wql))?;
+        let [object] = row;
+        Ok(object.filter(|_| returned > 0).map(Object))
     }
 
     /// A class definition, for spawning instances and method parameters.

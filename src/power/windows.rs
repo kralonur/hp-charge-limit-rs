@@ -2,7 +2,7 @@
 //! from the ACPI battery classes in `root\wmi` (the same _BIF/_BST data
 //! Linux shows in sysfs, in mWh and mV).
 
-use super::{Energy, Reading, Voltage};
+use super::{BatterySnapshot, Energy, Reading, Voltage};
 use crate::wmi::{Namespace, Object};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
@@ -15,6 +15,7 @@ const UNKNOWN: u8 = 255;
 const UNKNOWN_RATE: i32 = i32::MIN;
 const MICRO_PER_MILLI: i64 = 1_000;
 const MILLI_PER_UNIT: f64 = 1_000.0;
+const SNAPSHOT_ROW_TIMEOUT_MS: i32 = 750;
 
 fn system_status() -> Option<SYSTEM_POWER_STATUS> {
     let mut status = SYSTEM_POWER_STATUS::default();
@@ -41,19 +42,30 @@ pub fn present() -> bool {
 }
 
 pub fn capacity() -> Option<u8> {
-    let status = system_status()?;
-    (has_battery(&status) && status.BatteryLifePercent != UNKNOWN)
+    capacity_from(&system_status()?)
+}
+
+fn capacity_from(status: &SYSTEM_POWER_STATUS) -> Option<u8> {
+    (has_battery(status) && status.BatteryLifePercent != UNKNOWN)
         .then_some(status.BatteryLifePercent)
 }
 
 pub fn energy() -> Option<Energy> {
-    battery_class("BatteryStatus")?
+    energy_from(&battery_class("BatteryStatus")?)
+}
+
+fn energy_from(battery: &Object) -> Option<Energy> {
+    battery
         .u32("RemainingCapacity")
         .map(|mwh| Energy::from_mwh(mwh.into()))
 }
 
 pub fn voltage() -> Option<Voltage> {
-    battery_class("BatteryStatus")?
+    voltage_from(&battery_class("BatteryStatus")?)
+}
+
+fn voltage_from(battery: &Object) -> Option<Voltage> {
+    battery
         .u32("Voltage")
         .map(|mv| Voltage::from_uv(i64::from(mv) * MICRO_PER_MILLI))
 }
@@ -61,7 +73,10 @@ pub fn voltage() -> Option<Voltage> {
 /// In sysfs terms: Charging, Discharging, Not charging (on AC, no charge
 /// flowing) or Unknown.
 pub fn status() -> Option<String> {
-    let battery = battery_class("BatteryStatus")?;
+    status_from(&battery_class("BatteryStatus")?)
+}
+
+fn status_from(battery: &Object) -> Option<String> {
     let status = if battery.bool("Charging")? {
         "Charging"
     } else if battery.bool("Discharging")? {
@@ -75,8 +90,15 @@ pub fn status() -> Option<String> {
 }
 
 pub fn health() -> Option<f64> {
-    let full = battery_class("BatteryFullChargedCapacity")?.u32("FullChargedCapacity")?;
-    let design = battery_class("BatteryStaticData")?.u32("DesignedCapacity")?;
+    health_from(
+        &battery_class("BatteryFullChargedCapacity")?,
+        &battery_class("BatteryStaticData")?,
+    )
+}
+
+fn health_from(full: &Object, design: &Object) -> Option<f64> {
+    let full = full.u32("FullChargedCapacity")?;
+    let design = design.u32("DesignedCapacity")?;
     (design > 0).then(|| f64::from(full) / f64::from(design) * 100.0)
 }
 
@@ -89,7 +111,10 @@ pub fn cycles() -> Option<u64> {
 /// Whichever of charge or discharge rate (mW, CIM sint32) is flowing; a
 /// driver may report it negative, or as i32::MIN when unknown.
 pub fn power_watts() -> Option<f64> {
-    let battery = battery_class("BatteryStatus")?;
+    power_watts_from(&battery_class("BatteryStatus")?)
+}
+
+fn power_watts_from(battery: &Object) -> Option<f64> {
     let rate = |name| {
         battery
             .i32(name)
@@ -118,6 +143,40 @@ pub fn ac_status() -> Option<bool> {
 
 pub fn on_ac() -> bool {
     system_status().is_some_and(|s| s.ACLineStatus == AC_ONLINE)
+}
+
+pub fn battery_snapshot() -> BatterySnapshot {
+    let system = system_status();
+    let mut snapshot = BatterySnapshot {
+        capacity: system.as_ref().and_then(capacity_from),
+        on_ac: system.is_some_and(|status| status.ACLineStatus == AC_ONLINE),
+        ..Default::default()
+    };
+    let Ok(namespace) = Namespace::connect(NAMESPACE) else {
+        return snapshot;
+    };
+    let first = |class| {
+        namespace
+            .first_with_timeout(class, SNAPSHOT_ROW_TIMEOUT_MS)
+            .ok()
+            .flatten()
+    };
+    if let Some(battery) = first("BatteryStatus") {
+        snapshot.status = status_from(&battery);
+        snapshot.energy = energy_from(&battery);
+        snapshot.voltage = voltage_from(&battery);
+        snapshot.power_watts = power_watts_from(&battery);
+    }
+    if let Some(data) = first("BatteryStaticData") {
+        snapshot.manufacturer = data.string("ManufactureName");
+        snapshot.model = data.string("DeviceName");
+        snapshot.health =
+            first("BatteryFullChargedCapacity").and_then(|full| health_from(&full, &data));
+    }
+    snapshot.cycles = first("BatteryCycleCount")
+        .and_then(|battery| battery.u32("CycleCount"))
+        .map(u64::from);
+    snapshot
 }
 
 pub fn reading() -> Option<Reading> {
