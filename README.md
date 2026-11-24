@@ -199,7 +199,7 @@ prove charge blocking.
 | Victus 15-fa0xxx | 8A4F | F.34 | Windows 11 | works | slow charge: about 2.4 W while running (off test not reported) |
 | Victus 15-fa2xxx | 8DCD | F.07 | Windows 11 | works | not tested |
 | Victus 15-fb2xxx (15-fb2111AX) | 8C2F | F.05 | Windows | works | not tested |
-| Victus 15-fb2xxx (15-fb2082wm) | 8C2F | F.10 | Windows | works | +0 mWh in 30 min off, 53% → 53%, with inhibit still set (off record says `keep`, so the switch to hold likely failed; log pending); Fast Startup state not reported ([#14](https://github.com/kralonur/hp-charge-limit-rs/issues/14)) |
+| Victus 15-fb2xxx (15-fb2082wm) | 8C2F | F.10 | Windows | works | inhibit kept (`--off-mode keep`) blocks charging: +0 mWh in 30 min off, 53% → 53%; hold while running let it rise 50% → 53% ([#14](https://github.com/kralonur/hp-charge-limit-rs/issues/14)) |
 | Victus 15-fb3xxx | (not reported) | (not reported) | Windows | works | slow charge (rate not reported) |
 | Victus 15-fb3xxx | 8DD0 | F.15 | Pop!_OS 24.04 | works | not tested |
 | Victus 15-fb3xxx | 8DD0 | F.15 | Windows 11 | works | use `--off-mode inhibit` |
