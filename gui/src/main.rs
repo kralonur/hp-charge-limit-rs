@@ -589,7 +589,7 @@ impl Render for Dashboard {
                                     })))
                                 .child(div().text_sm().text_color(muted).child("Closing this window doesn’t stop the service."))
                                 .child(Button::new("charging-guide").ghost().icon(IconName::ExternalLink).label("Charging & setup guide")
-                                    .on_click(|_, _, cx| cx.open_url("https://github.com/kralonur/hp-charge-limit-rs#how-it-works"))))
+                                    .on_click(|_, _, cx| cx.open_url("https://github.com/kralonur/hp-charge-limit-rs/blob/main/docs/how-it-works.md"))))
                     )
                     .when(self.loaded && (matches!(s.service_state, ServiceStatus::Running | ServiceStatus::Stopped)
                         || self.tool_report.as_ref().is_some_and(|(action, _, _)| *action == Action::Uninstall)),
